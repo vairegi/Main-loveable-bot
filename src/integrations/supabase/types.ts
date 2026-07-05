@@ -14,7 +14,117 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      activity_log: {
+        Row: {
+          action: string
+          actor_id: number | null
+          actor_username: string | null
+          created_at: string
+          details: Json | null
+          id: number
+        }
+        Insert: {
+          action: string
+          actor_id?: number | null
+          actor_username?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: number
+        }
+        Update: {
+          action?: string
+          actor_id?: number | null
+          actor_username?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: number
+        }
+        Relationships: []
+      }
+      admins: {
+        Row: {
+          added_by: number | null
+          created_at: string
+          first_name: string | null
+          is_super_admin: boolean
+          telegram_user_id: number
+          username: string | null
+        }
+        Insert: {
+          added_by?: number | null
+          created_at?: string
+          first_name?: string | null
+          is_super_admin?: boolean
+          telegram_user_id: number
+          username?: string | null
+        }
+        Update: {
+          added_by?: number | null
+          created_at?: string
+          first_name?: string | null
+          is_super_admin?: boolean
+          telegram_user_id?: number
+          username?: string | null
+        }
+        Relationships: []
+      }
+      bot_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      channels: {
+        Row: {
+          added_by: number | null
+          created_at: string
+          role: string
+          telegram_chat_id: number
+          title: string | null
+        }
+        Insert: {
+          added_by?: number | null
+          created_at?: string
+          role: string
+          telegram_chat_id: number
+          title?: string | null
+        }
+        Update: {
+          added_by?: number | null
+          created_at?: string
+          role?: string
+          telegram_chat_id?: number
+          title?: string | null
+        }
+        Relationships: []
+      }
+      telegram_updates: {
+        Row: {
+          received_at: string
+          update_id: number
+        }
+        Insert: {
+          received_at?: string
+          update_id: number
+        }
+        Update: {
+          received_at?: string
+          update_id?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
