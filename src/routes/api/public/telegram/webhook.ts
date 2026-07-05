@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { CmdCtx } from "@/lib/bot/commands";
 
 export const Route = createFileRoute("/api/public/telegram/webhook")({
   server: {
@@ -6,8 +7,9 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
       POST: async ({ request }) => {
         const { deriveTelegramWebhookSecret, safeEqual } = await import("@/lib/bot/webhook-secret");
         const { getAdminDb } = await import("@/lib/bot/db");
-        const { dispatchCommand, type CmdCtx } = await import("@/lib/bot/commands");
+        const { dispatchCommand } = await import("@/lib/bot/commands");
         const { sendMessage } = await import("@/lib/bot/telegram");
+
 
         const TELEGRAM_API_KEY = process.env.TELEGRAM_API_KEY;
         if (!TELEGRAM_API_KEY) return new Response("Server misconfigured", { status: 500 });
