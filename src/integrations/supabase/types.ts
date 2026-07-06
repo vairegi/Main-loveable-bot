@@ -152,6 +152,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      is_telegram_bot_request: { Args: never; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
