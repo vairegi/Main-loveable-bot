@@ -38,12 +38,14 @@ function register(name: string, def: CmdDef) {
 
 // ---------------- Log helper ----------------
 async function logAction(db: SupabaseClient, user: TgUser, action: string, details?: unknown) {
-  await db.from("activity_log").insert({
+  const { error } = await db.from("activity_log").insert({
     actor_id: user.id,
     actor_username: user.username ?? null,
     action,
     details: details ?? null,
   });
+  if (error) return { error };
+
   // Also post to the log channel if configured
   const { data: setting } = await db
     .from("bot_settings")
@@ -60,6 +62,8 @@ async function logAction(db: SupabaseClient, user: TgUser, action: string, detai
       /* log channel may not be reachable; ignore */
     }
   }
+
+  return { error: null };
 }
 
 // ---------------- Commands ----------------
