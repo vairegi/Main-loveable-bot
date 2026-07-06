@@ -32,6 +32,26 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           }
         }
 
+        // Handle new posts from database channels
+        const channelPost = update.channel_post;
+        if (channelPost?.chat?.id) {
+          const { data: ch } = await db
+            .from("channels")
+            .select("role")
+            .eq("telegram_chat_id", channelPost.chat.id)
+            .maybeSingle();
+          if (ch?.role === "database") {
+            const { handleDatabaseChannelPost } = await import("@/lib/bot/posting");
+            try {
+              await handleDatabaseChannelPost(db, channelPost);
+            } catch (e) {
+              console.error("handleDatabaseChannelPost failed:", e);
+            }
+            return Response.json({ ok: true, database_post: true });
+          }
+          return Response.json({ ok: true, ignored_channel_post: true });
+        }
+
         const message = update.message;
         if (!message?.text || !message.from) {
           return Response.json({ ok: true, ignored: true });

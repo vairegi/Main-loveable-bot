@@ -110,6 +110,71 @@ export type Database = {
         }
         Relationships: []
       }
+      post_copies: {
+        Row: {
+          created_at: string
+          id: number
+          main_chat_id: number
+          main_message_id: number
+          post_id: number
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          main_chat_id: number
+          main_message_id: number
+          post_id: number
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          main_chat_id?: number
+          main_message_id?: number
+          post_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_copies_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      posts: {
+        Row: {
+          caption: string | null
+          code: string
+          created_at: string
+          created_by: number | null
+          id: number
+          media: Json
+          source_chat_id: number
+          source_message_id: number
+        }
+        Insert: {
+          caption?: string | null
+          code: string
+          created_at?: string
+          created_by?: number | null
+          id?: number
+          media?: Json
+          source_chat_id: number
+          source_message_id: number
+        }
+        Update: {
+          caption?: string | null
+          code?: string
+          created_at?: string
+          created_by?: number | null
+          id?: number
+          media?: Json
+          source_chat_id?: number
+          source_message_id?: number
+        }
+        Relationships: []
+      }
       telegram_updates: {
         Row: {
           received_at: string

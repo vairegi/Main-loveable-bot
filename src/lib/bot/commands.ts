@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessage } from "./telegram";
+import { deliverFileByCode, deletePostByCode, repostByCode } from "./posting";
 
 export interface TgUser {
   id: number;
@@ -70,7 +71,15 @@ async function logAction(db: SupabaseClient, user: TgUser, action: string, detai
 
 register("start", {
   help: "/start — bootstrap super-admin (first user) or show welcome",
-  handler: async ({ db, user }) => {
+  handler: async ({ db, user, chatId, args }) => {
+    // Deep-link: /start get_<code> → deliver file to this user
+    const payload = args[0];
+    if (payload && payload.startsWith("get_")) {
+      const code = payload.slice("get_".length);
+      const err = await deliverFileByCode(db, chatId, code);
+      return err || null;
+    }
+
     // Bootstrap: if no admins exist, first /start becomes super-admin
     const { count, error: countError } = await db.from("admins").select("*", { count: "exact", head: true });
     if (countError) return `❌ I couldn't check the admin list: ${countError.message}`;
@@ -227,7 +236,92 @@ register("setlog", {
   },
 });
 
-// ---------------- Dispatch ----------------
+// ---------------- Phase 2: posting engine ----------------
+
+register("setcaption", {
+  help: "/setcaption &lt;template&gt; — caption template for main-channel posts. Placeholders: {caption}, {code}",
+  adminOnly: true,
+  handler: async ({ db, user, rawText }) => {
+    const template = rawText.replace(/^\/setcaption(@\S+)?\s*/i, "").trim();
+    if (!template) return "Usage: /setcaption &lt;template&gt;\nExample: /setcaption {caption}\n\n🎬 Tap below to get the file.";
+    const { error } = await db.from("bot_settings").upsert({
+      key: "caption_template",
+      value: { text: template },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "set_caption_template", { template });
+    return `✅ Caption template updated. Future auto-posts will use it.`;
+  },
+});
+
+register("pauseposting", {
+  help: "/pauseposting — pause auto-posting from the database channel",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    const { error } = await db.from("bot_settings").upsert({
+      key: "posting_paused",
+      value: { paused: true },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "pause_posting");
+    return "⏸️ Auto-posting paused. New database posts will be stored but not forwarded until you /resumeposting.";
+  },
+});
+
+register("resumeposting", {
+  help: "/resumeposting — resume auto-posting",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    const { error } = await db.from("bot_settings").upsert({
+      key: "posting_paused",
+      value: { paused: false },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "resume_posting");
+    return "▶️ Auto-posting resumed.";
+  },
+});
+
+register("repost", {
+  help: "/repost &lt;code&gt; — repost a stored post to all main channels",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const code = args[0];
+    if (!code) return "Usage: /repost &lt;code&gt;";
+    const result = await repostByCode(db, code);
+    await logAction(db, user, "repost", { code });
+    return result;
+  },
+});
+
+register("deletepost", {
+  help: "/deletepost &lt;code&gt; — delete a post from all main channels",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const code = args[0];
+    if (!code) return "Usage: /deletepost &lt;code&gt;";
+    const result = await deletePostByCode(db, code);
+    await logAction(db, user, "delete_post", { code });
+    return result;
+  },
+});
+
+register("recentposts", {
+  help: "/recentposts — show last 10 posts with their codes",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { data } = await db.from("posts").select("code, caption, created_at").order("created_at", { ascending: false }).limit(10);
+    if (!data?.length) return "No posts yet.";
+    return data
+      .map((p) => `<code>${p.code}</code> — ${(p.caption ?? "").slice(0, 40) || "(no caption)"}`)
+      .join("\n");
+  },
+});
+
+
 
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
   const def = commands.get(commandName.toLowerCase());
