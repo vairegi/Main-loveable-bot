@@ -1,6 +1,7 @@
 // Server-only Supabase admin client for the bot. Load via dynamic import
 // from inside handler bodies of route files / server functions.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createHash } from "crypto";
 
 let cached: SupabaseClient | null = null;
 
@@ -8,7 +9,13 @@ function isNewSupabaseApiKey(value: string): boolean {
   return value.startsWith("sb_publishable_") || value.startsWith("sb_secret_");
 }
 
-function createSupabaseFetch(supabaseKey: string): typeof fetch {
+function deriveBotDatabaseSecret(): string {
+  const telegramKey = process.env.TELEGRAM_API_KEY;
+  if (!telegramKey) throw new Error("TELEGRAM_API_KEY is not configured");
+  return createHash("sha256").update(`telegram-webhook:${telegramKey}`).digest("base64url");
+}
+
+function createSupabaseFetch(supabaseKey: string, botDatabaseSecret: string): typeof fetch {
   return (input, init) => {
     const headers = new Headers(
       typeof Request !== "undefined" && input instanceof Request ? input.headers : undefined,
@@ -24,6 +31,7 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
     }
 
     headers.set("apikey", supabaseKey);
+    headers.set("x-telegram-bot-secret", botDatabaseSecret);
     return fetch(input, { ...init, headers });
   };
 }
@@ -33,9 +41,10 @@ export function getAdminDb(): SupabaseClient {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("Supabase server env is not configured");
+  const botDatabaseSecret = deriveBotDatabaseSecret();
   cached = createClient(url, key, {
     global: {
-      fetch: createSupabaseFetch(key),
+      fetch: createSupabaseFetch(key, botDatabaseSecret),
     },
     auth: { persistSession: false, autoRefreshToken: false },
   });
