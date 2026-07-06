@@ -68,16 +68,23 @@ register("start", {
   help: "/start — bootstrap super-admin (first user) or show welcome",
   handler: async ({ db, user }) => {
     // Bootstrap: if no admins exist, first /start becomes super-admin
-    const { count } = await db.from("admins").select("*", { count: "exact", head: true });
+    const { count, error: countError } = await db.from("admins").select("*", { count: "exact", head: true });
+    if (countError) return `❌ I couldn't check the admin list: ${countError.message}`;
+
     if ((count ?? 0) === 0) {
-      await db.from("admins").insert({
+      const { error: insertError } = await db.from("admins").upsert({
         telegram_user_id: user.id,
         username: user.username ?? null,
         first_name: user.first_name ?? null,
         is_super_admin: true,
         added_by: user.id,
       });
-      await logAction(db, user, "bootstrap_super_admin");
+
+      if (insertError) return `❌ I couldn't save you as super-admin: ${insertError.message}`;
+
+      const { error: logError } = await logAction(db, user, "bootstrap_super_admin");
+      if (logError) return `👑 <b>Welcome, super-admin!</b>\n\nYou are saved as super-admin, but I couldn't write the activity log yet: ${logError.message}`;
+
       return `👑 <b>Welcome, super-admin!</b>\n\nYou are the first user, so you now control this bot.\n\nSend /help to see admin commands.`;
     }
     return `👋 Hi ${user.first_name ?? ""}!\n\nThis is a private management bot. Send /help if you're an admin.`;
