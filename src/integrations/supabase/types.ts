@@ -130,7 +130,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      bootstrap_telegram_super_admin: {
+        Args: {
+          _first_name: string
+          _telegram_user_id: number
+          _username: string
+          _webhook_secret: string
+        }
+        Returns: {
+          added_by: number | null
+          created_at: string
+          first_name: string | null
+          is_super_admin: boolean
+          telegram_user_id: number
+          username: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "admins"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       [_ in never]: never
