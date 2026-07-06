@@ -71,7 +71,15 @@ async function logAction(db: SupabaseClient, user: TgUser, action: string, detai
 
 register("start", {
   help: "/start — bootstrap super-admin (first user) or show welcome",
-  handler: async ({ db, user }) => {
+  handler: async ({ db, user, chatId, args }) => {
+    // Deep-link: /start get_<code> → deliver file to this user
+    const payload = args[0];
+    if (payload && payload.startsWith("get_")) {
+      const code = payload.slice("get_".length);
+      const err = await deliverFileByCode(db, chatId, code);
+      return err || null;
+    }
+
     // Bootstrap: if no admins exist, first /start becomes super-admin
     const { count, error: countError } = await db.from("admins").select("*", { count: "exact", head: true });
     if (countError) return `❌ I couldn't check the admin list: ${countError.message}`;
