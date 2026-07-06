@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessage } from "./telegram";
+import { deliverFileByCode, deletePostByCode, repostByCode } from "./posting";
 
 export interface TgUser {
   id: number;
