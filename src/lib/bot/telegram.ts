@@ -32,3 +32,61 @@ export async function tg<T = any>(method: string, body: Record<string, unknown> 
 export async function sendMessage(chatId: number | string, text: string, extra: Record<string, unknown> = {}) {
   return tg("sendMessage", { chat_id: chatId, text, parse_mode: "HTML", ...extra });
 }
+
+export async function sendPhoto(chatId: number | string, photo: string, extra: Record<string, unknown> = {}) {
+  return tg("sendPhoto", { chat_id: chatId, photo, parse_mode: "HTML", ...extra });
+}
+
+export async function sendVideo(chatId: number | string, video: string, extra: Record<string, unknown> = {}) {
+  return tg("sendVideo", { chat_id: chatId, video, parse_mode: "HTML", ...extra });
+}
+
+export async function sendDocument(chatId: number | string, document: string, extra: Record<string, unknown> = {}) {
+  return tg("sendDocument", { chat_id: chatId, document, parse_mode: "HTML", ...extra });
+}
+
+export async function sendAudio(chatId: number | string, audio: string, extra: Record<string, unknown> = {}) {
+  return tg("sendAudio", { chat_id: chatId, audio, parse_mode: "HTML", ...extra });
+}
+
+export async function copyMessage(
+  chatId: number | string,
+  fromChatId: number | string,
+  messageId: number,
+  extra: Record<string, unknown> = {},
+) {
+  return tg("copyMessage", {
+    chat_id: chatId,
+    from_chat_id: fromChatId,
+    message_id: messageId,
+    parse_mode: "HTML",
+    ...extra,
+  });
+}
+
+export async function editMessageCaption(
+  chatId: number | string,
+  messageId: number,
+  caption: string,
+  extra: Record<string, unknown> = {},
+) {
+  return tg("editMessageCaption", {
+    chat_id: chatId,
+    message_id: messageId,
+    caption,
+    parse_mode: "HTML",
+    ...extra,
+  });
+}
+
+export async function deleteMessage(chatId: number | string, messageId: number) {
+  return tg("deleteMessage", { chat_id: chatId, message_id: messageId });
+}
+
+let cachedBotUsername: string | null = null;
+export async function getBotUsername(): Promise<string> {
+  if (cachedBotUsername) return cachedBotUsername;
+  const me = await tg<{ username: string }>("getMe");
+  cachedBotUsername = me.username;
+  return me.username;
+}
