@@ -99,6 +99,21 @@ export async function copyMessage(
   });
 }
 
+export async function forwardMessage(
+  chatId: number | string,
+  fromChatId: number | string,
+  messageId: number,
+  extra: Record<string, unknown> = {},
+) {
+  return tg("forwardMessage", {
+    chat_id: chatId,
+    from_chat_id: fromChatId,
+    message_id: messageId,
+    disable_notification: true,
+    ...extra,
+  });
+}
+
 export async function editMessageCaption(
   chatId: number | string,
   messageId: number,
