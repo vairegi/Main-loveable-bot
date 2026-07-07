@@ -23,6 +23,12 @@ export interface TgMedia {
   source_message_id?: number;
 }
 
+export interface DripFailure {
+  id: number;
+  code?: string;
+  reason: string;
+}
+
 // Extract the primary media object from a Telegram message
 export function extractMedia(msg: any): TgMedia {
   if (msg.photo && Array.isArray(msg.photo) && msg.photo.length) {
@@ -81,6 +87,35 @@ function buildGetFileKeyboard(botUsername: string, code: string) {
   };
 }
 
+function chatId(value: number | string): number | string {
+  return typeof value === "number" && Number.isFinite(value) ? String(Math.trunc(value)) : value;
+}
+
+function numericMessageId(value: unknown): number | undefined {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(n) ? Math.trunc(n) : undefined;
+}
+
+function mediaWithSource(media: TgMedia, fallbackSourceMessageId?: number): TgMedia {
+  return media.source_message_id || !fallbackSourceMessageId
+    ? media
+    : { ...media, source_message_id: fallbackSourceMessageId };
+}
+
+function dripFailureReason(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e ?? "unknown error");
+  if (/chat not found/i.test(message)) {
+    return "Telegram says chat not found. Make sure the bot is admin in both the database channel and the main channel, then run /dripnow again.";
+  }
+  if (/message to copy not found/i.test(message)) {
+    return "Telegram cannot find the original database-channel message for this queued post.";
+  }
+  if (/not enough rights|administrator rights/i.test(message)) {
+    return "Telegram says the bot needs admin posting rights in the channel.";
+  }
+  return message.slice(0, 220);
+}
+
 // -------- Live capture from database channel_post updates --------
 export async function handleDatabaseChannelPost(db: SupabaseClient, msg: any): Promise<void> {
   const sourceChatId = msg.chat.id as number;
@@ -137,7 +172,7 @@ export async function handleDatabaseChannelPost(db: SupabaseClient, msg: any): P
 }
 
 // -------- Drip: publish the next N queued posts to all main channels --------
-export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<{ posted: number; failed: number; drained: boolean }> {
+export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<{ posted: number; failed: number; drained: boolean; failures: DripFailure[] }> {
   const { data: queue } = await db
     .from("posts")
     .select("*")
@@ -145,10 +180,11 @@ export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<
     .order("created_at", { ascending: true })
     .limit(batchSize);
 
-  if (!queue?.length) return { posted: 0, failed: 0, drained: true };
+  if (!queue?.length) return { posted: 0, failed: 0, drained: true, failures: [] };
 
   let posted = 0;
   let failed = 0;
+  const failures: DripFailure[] = [];
 
   for (const post of queue) {
     try {
@@ -158,9 +194,10 @@ export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<
     } catch (e) {
       console.error("Drip publish failed:", post.id, e);
       failed++;
+      failures.push({ id: post.id, code: post.code, reason: dripFailureReason(e) });
     }
   }
-  return { posted, failed, drained: queue.length < batchSize };
+  return { posted, failed, drained: queue.length < batchSize, failures };
 }
 
 async function publishPost(db: SupabaseClient, post: any): Promise<void> {
@@ -171,29 +208,32 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
   const template = await getCaptionTemplate(db);
   const captionText = renderCaption(template, { caption: post.caption ?? "", code: post.code });
   const keyboard = buildGetFileKeyboard(botUsername, post.code);
-  const media = (post.media ?? {}) as TgMedia;
+  const sourceChatId = post.source_chat_id ? chatId(post.source_chat_id) : undefined;
+  const sourceMessageId = numericMessageId(post.source_message_id);
+  const media = mediaWithSource((post.media ?? {}) as TgMedia, sourceMessageId);
 
   for (const ch of mains) {
+    const mainChatId = chatId(ch.telegram_chat_id);
     // Send the "cover" (image/video/text) with the Get File button.
     // Prefer file_id (live-captured posts). Fall back to copyMessage from source
     // channel (backfilled posts have no Bot API file_id).
     let mainMessage: any;
     if (media.kind === "photo" && media.file_id) {
-      mainMessage = await sendPhoto(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
+      mainMessage = await sendPhoto(mainChatId, media.file_id, { caption: captionText, reply_markup: keyboard });
     } else if (media.kind === "video" && media.file_id) {
-      mainMessage = await sendVideo(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
+      mainMessage = await sendVideo(mainChatId, media.file_id, { caption: captionText, reply_markup: keyboard });
     } else if (media.kind === "document" && media.file_id) {
-      mainMessage = await sendDocument(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
+      mainMessage = await sendDocument(mainChatId, media.file_id, { caption: captionText, reply_markup: keyboard });
     } else if (media.kind === "audio" && media.file_id) {
-      mainMessage = await sendAudio(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
-    } else if (media.kind !== "text" && post.source_chat_id && post.source_message_id) {
+      mainMessage = await sendAudio(mainChatId, media.file_id, { caption: captionText, reply_markup: keyboard });
+    } else if (media.kind !== "text" && sourceChatId && media.source_message_id) {
       // Backfill fallback — copy the original message from the database channel
-      mainMessage = await copyMessage(ch.telegram_chat_id, post.source_chat_id, post.source_message_id, {
+      mainMessage = await copyMessage(mainChatId, sourceChatId, media.source_message_id, {
         caption: captionText,
         reply_markup: keyboard,
       });
     } else {
-      mainMessage = await sendMessage(ch.telegram_chat_id, captionText, { reply_markup: keyboard });
+      mainMessage = await sendMessage(mainChatId, captionText, { reply_markup: keyboard });
     }
 
     await db.from("post_copies").insert({
@@ -209,7 +249,9 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
   const { data: post } = await db.from("posts").select("*").eq("code", code).maybeSingle();
   if (!post) return "❌ Sorry, that file is no longer available.";
 
-  const media = (post.media ?? {}) as TgMedia;
+  const sourceChatId = post.source_chat_id ? chatId(post.source_chat_id) : undefined;
+  const sourceMessageId = numericMessageId(post.source_message_id);
+  const media = mediaWithSource((post.media ?? {}) as TgMedia, sourceMessageId);
   const caption = post.caption ?? "";
   const extras = Array.isArray(post.extra_files) ? (post.extra_files as TgMedia[]) : [];
 
@@ -219,20 +261,21 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
     else if (media.kind === "video" && media.file_id) await sendVideo(userChatId, media.file_id, { caption });
     else if (media.kind === "document" && media.file_id) await sendDocument(userChatId, media.file_id, { caption });
     else if (media.kind === "audio" && media.file_id) await sendAudio(userChatId, media.file_id, { caption });
-    else if (media.kind !== "text" && post.source_chat_id && post.source_message_id) {
-      await copyMessage(userChatId, post.source_chat_id, post.source_message_id, { caption });
+    else if (media.kind !== "text" && sourceChatId && media.source_message_id) {
+      await copyMessage(userChatId, sourceChatId, media.source_message_id, { caption });
     } else if (caption) await sendMessage(userChatId, caption);
 
     // Extra files (PDFs etc.)
-    for (const f of extras) {
+    for (const [index, f] of extras.entries()) {
+      const extraSourceMessageId = f.source_message_id ?? (sourceMessageId ? sourceMessageId + index + 1 : undefined);
       if (f.file_id) {
         if (f.kind === "document") await sendDocument(userChatId, f.file_id);
         else if (f.kind === "video") await sendVideo(userChatId, f.file_id);
         else if (f.kind === "audio") await sendAudio(userChatId, f.file_id);
         else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id);
-      } else if (f.source_message_id && post.source_chat_id) {
+      } else if (extraSourceMessageId && sourceChatId) {
         // Backfilled extras — copy from source channel
-        await copyMessage(userChatId, post.source_chat_id, f.source_message_id);
+        await copyMessage(userChatId, sourceChatId, extraSourceMessageId);
       }
     }
     return "";
