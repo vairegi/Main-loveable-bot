@@ -3,8 +3,18 @@
 // (or null to skip). This keeps features modular — add a new file, register it here.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomBytes } from "crypto";
 import { sendMessage } from "./telegram";
-import { deliverFileByCode, deletePostByCode, repostByCode } from "./posting";
+import {
+  deliverFileByCode,
+  deletePostByCode,
+  repostByCode,
+  getSchedule,
+  saveSchedule,
+  queueSize,
+  dripQueue,
+  type Schedule,
+} from "./posting";
 
 export interface TgUser {
   id: number;
@@ -313,15 +323,125 @@ register("recentposts", {
   help: "/recentposts — show last 10 posts with their codes",
   adminOnly: true,
   handler: async ({ db }) => {
-    const { data } = await db.from("posts").select("code, caption, created_at").order("created_at", { ascending: false }).limit(10);
+    const { data } = await db.from("posts").select("code, caption, posted_at, created_at").order("created_at", { ascending: false }).limit(10);
     if (!data?.length) return "No posts yet.";
     return data
-      .map((p) => `<code>${p.code}</code> — ${(p.caption ?? "").slice(0, 40) || "(no caption)"}`)
+      .map((p) => `${p.posted_at ? "✅" : "🕒"} <code>${p.code}</code> — ${(p.caption ?? "").slice(0, 40) || "(no caption)"}`)
       .join("\n");
   },
 });
 
+// ---------------- Phase 3: queue + drip scheduler ----------------
 
+register("queue", {
+  help: "/queue — how many posts are waiting in the drip queue",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const size = await queueSize(db);
+    const { count: total } = await db.from("posts").select("*", { count: "exact", head: true });
+    return `📥 Queue: <b>${size}</b> waiting (of ${total ?? 0} total).`;
+  },
+});
+
+register("schedulestatus", {
+  help: "/schedulestatus — show current drip schedule",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const s = await getSchedule(db);
+    if (!s.enabled) return "⏹️ Schedule is <b>off</b>. Use /setschedule to configure it.";
+    if (s.mode === "interval") {
+      const last = s.last_drip_at ? new Date(s.last_drip_at).toISOString() : "never";
+      return `▶️ Mode: <b>interval</b>\nEvery <b>${s.interval_minutes}</b> minutes, <b>${s.batch_size}</b> post(s) per drip.\nLast drip: ${last}`;
+    }
+    if (s.mode === "times") {
+      const tzHours = (s.tz_offset_minutes ?? 0) / 60;
+      return `▶️ Mode: <b>times</b>\nSlots (UTC${tzHours >= 0 ? "+" : ""}${tzHours}): <b>${s.times.join(", ")}</b>\n<b>${s.per_slot}</b> post(s) per slot.`;
+    }
+    return "Schedule format not recognized.";
+  },
+});
+
+register("scheduleoff", {
+  help: "/scheduleoff — pause the drip scheduler",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    await saveSchedule(db, { enabled: false });
+    await logAction(db, user, "schedule_off");
+    return "⏹️ Drip scheduler paused. New posts still enter the queue.";
+  },
+});
+
+register("setschedule", {
+  help:
+    "/setschedule interval &lt;minutes&gt; &lt;batch&gt;\n" +
+    "/setschedule times &lt;HH:MM,HH:MM,...&gt; &lt;per_slot&gt; [tz_offset_hours]\n" +
+    "  Examples:\n" +
+    "    /setschedule interval 90 1   (1 post every 90 minutes)\n" +
+    "    /setschedule times 09:00,21:00 5 5   (5 posts at 09:00 &amp; 21:00, UTC+5)\n" +
+    "    /setschedule times 20:00 15 0        (15 posts at 20:00 UTC)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const mode = args[0]?.toLowerCase();
+    if (mode === "interval") {
+      const mins = Number(args[1]);
+      const batch = Number(args[2]);
+      if (!Number.isFinite(mins) || mins < 1) return "❌ Invalid interval minutes.";
+      if (!Number.isFinite(batch) || batch < 1) return "❌ Invalid batch size.";
+      const s: Schedule = { enabled: true, mode: "interval", interval_minutes: mins, batch_size: batch, last_drip_at: null };
+      await saveSchedule(db, s);
+      await logAction(db, user, "set_schedule", s);
+      return `✅ Schedule saved: <b>${batch}</b> post(s) every <b>${mins}</b> minutes.`;
+    }
+    if (mode === "times") {
+      const timesRaw = args[1] ?? "";
+      const perSlot = Number(args[2]);
+      const tzHours = args[3] !== undefined ? Number(args[3]) : 0;
+      const times = timesRaw.split(",").map((t) => t.trim()).filter(Boolean);
+      const valid = times.every((t) => /^\d{1,2}:\d{2}$/.test(t));
+      if (!times.length || !valid) return "❌ Invalid times. Use HH:MM,HH:MM (24h).";
+      if (!Number.isFinite(perSlot) || perSlot < 1) return "❌ Invalid per_slot count.";
+      if (!Number.isFinite(tzHours)) return "❌ Invalid tz_offset_hours.";
+      const s: Schedule = {
+        enabled: true,
+        mode: "times",
+        times,
+        per_slot: perSlot,
+        tz_offset_minutes: Math.round(tzHours * 60),
+      };
+      await saveSchedule(db, s);
+      await logAction(db, user, "set_schedule", s);
+      return `✅ Schedule saved: <b>${perSlot}</b> post(s) at <b>${times.join(", ")}</b> (UTC${tzHours >= 0 ? "+" : ""}${tzHours}).`;
+    }
+    return "Usage:\n/setschedule interval &lt;minutes&gt; &lt;batch&gt;\n/setschedule times &lt;HH:MM,HH:MM&gt; &lt;per_slot&gt; [tz_offset_hours]";
+  },
+});
+
+register("dripnow", {
+  help: "/dripnow [n] — publish the next N queued posts immediately (default 1)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const n = Math.max(1, Math.min(50, Number(args[0]) || 1));
+    const r = await dripQueue(db, n);
+    await logAction(db, user, "drip_now", { requested: n, ...r });
+    return `📤 Drip complete — posted ${r.posted}, failed ${r.failed}.`;
+  },
+});
+
+register("genimporttoken", {
+  help: "/genimporttoken — create a token for the MTProto backfill script (super-admin)",
+  superOnly: true,
+  handler: async ({ db, user }) => {
+    const token = randomBytes(24).toString("base64url");
+    const { error } = await db.from("bot_settings").upsert({
+      key: "import_token",
+      value: { token, created_at: new Date().toISOString() },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "gen_import_token");
+    return `🔑 Import token (keep secret, single use for the backfill script):\n<code>${token}</code>\n\nSet it as BOT_IMPORT_TOKEN in the backfill script.`;
+  },
+});
 
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
   const def = commands.get(commandName.toLowerCase());

@@ -148,8 +148,11 @@ export type Database = {
           code: string
           created_at: string
           created_by: number | null
+          extra_files: Json
           id: number
           media: Json
+          media_group_id: string | null
+          posted_at: string | null
           source_chat_id: number
           source_message_id: number
         }
@@ -158,8 +161,11 @@ export type Database = {
           code: string
           created_at?: string
           created_by?: number | null
+          extra_files?: Json
           id?: number
           media?: Json
+          media_group_id?: string | null
+          posted_at?: string | null
           source_chat_id: number
           source_message_id: number
         }
@@ -168,8 +174,11 @@ export type Database = {
           code?: string
           created_at?: string
           created_by?: number | null
+          extra_files?: Json
           id?: number
           media?: Json
+          media_group_id?: string | null
+          posted_at?: string | null
           source_chat_id?: number
           source_message_id?: number
         }
