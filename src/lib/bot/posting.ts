@@ -69,6 +69,12 @@ async function setSetting(db: SupabaseClient, key: string, value: unknown) {
   await db.from("bot_settings").upsert({ key, value, updated_at: new Date().toISOString() });
 }
 
+export async function getPostingOptions(db: SupabaseClient): Promise<{ protect: boolean; spoiler: boolean }> {
+  const p = await getSetting<{ enabled: boolean }>(db, "protect_content");
+  const s = await getSetting<{ enabled: boolean }>(db, "spoiler_media");
+  return { protect: !!p?.enabled, spoiler: !!s?.enabled };
+}
+
 async function getCaptionTemplate(db: SupabaseClient): Promise<string> {
   const v = await getSetting<{ text: string }>(db, "caption_template");
   return v?.text ?? "{caption}\n\n🎬 Tap below to get the file.";
