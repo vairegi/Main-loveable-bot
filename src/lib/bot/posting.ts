@@ -217,6 +217,9 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
   const sourceChatId = post.source_chat_id ? chatId(post.source_chat_id) : undefined;
   const sourceMessageId = numericMessageId(post.source_message_id);
   const media = mediaWithSource((post.media ?? {}) as TgMedia, sourceMessageId);
+  const opts = await getPostingOptions(db);
+  const protectExtra = opts.protect ? { protect_content: true } : {};
+  const spoilerPhoto = opts.spoiler ? { has_spoiler: true } : {};
 
   for (const ch of mains) {
     const mainChatId = chatId(ch.telegram_chat_id);
@@ -224,22 +227,20 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
     // Prefer file_id (live-captured posts). Fall back to copyMessage from source
     // channel (backfilled posts have no Bot API file_id).
     let mainMessage: any;
+    const base = { caption: captionText, reply_markup: keyboard, ...protectExtra };
     if (media.kind === "photo" && media.file_id) {
-      mainMessage = await sendPhoto(mainChatId, media.file_id, { caption: captionText, reply_markup: keyboard });
+      mainMessage = await sendPhoto(mainChatId, media.file_id, { ...base, ...spoilerPhoto });
     } else if (media.kind === "video" && media.file_id) {
-      mainMessage = await sendVideo(mainChatId, media.file_id, { caption: captionText, reply_markup: keyboard });
+      mainMessage = await sendVideo(mainChatId, media.file_id, { ...base, ...spoilerPhoto });
     } else if (media.kind === "document" && media.file_id) {
-      mainMessage = await sendDocument(mainChatId, media.file_id, { caption: captionText, reply_markup: keyboard });
+      mainMessage = await sendDocument(mainChatId, media.file_id, base);
     } else if (media.kind === "audio" && media.file_id) {
-      mainMessage = await sendAudio(mainChatId, media.file_id, { caption: captionText, reply_markup: keyboard });
+      mainMessage = await sendAudio(mainChatId, media.file_id, base);
     } else if (media.kind !== "text" && sourceChatId && media.source_message_id) {
       // Backfill fallback — copy the original message from the database channel
-      mainMessage = await copyMessage(mainChatId, sourceChatId, media.source_message_id, {
-        caption: captionText,
-        reply_markup: keyboard,
-      });
+      mainMessage = await copyMessage(mainChatId, sourceChatId, media.source_message_id, base);
     } else {
-      mainMessage = await sendMessage(mainChatId, captionText, { reply_markup: keyboard });
+      mainMessage = await sendMessage(mainChatId, captionText, { reply_markup: keyboard, ...protectExtra });
     }
 
     await db.from("post_copies").insert({
