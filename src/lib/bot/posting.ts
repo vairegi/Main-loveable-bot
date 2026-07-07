@@ -20,6 +20,7 @@ export interface TgMedia {
   file_id?: string;
   file_name?: string;
   mime_type?: string;
+  source_message_id?: number;
 }
 
 // Extract the primary media object from a Telegram message
