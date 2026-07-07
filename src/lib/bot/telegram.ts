@@ -13,20 +13,55 @@ function creds() {
 
 export async function tg<T = any>(method: string, body: Record<string, unknown> = {}): Promise<T> {
   const { lovableKey, telegramKey } = creds();
-  const res = await fetch(`${GATEWAY}/${method}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": telegramKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    throw new Error(`Telegram ${method} failed [${res.status}]: ${JSON.stringify(data)}`);
+  const maxAttempts = 4;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(`${GATEWAY}/${method}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${lovableKey}`,
+          "X-Connection-Api-Key": telegramKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      lastErr = e;
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+        continue;
+      }
+      throw new Error(`Telegram ${method} network error: ${(e as Error).message}`);
+    }
+
+    const text = await res.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      // Non-JSON body (e.g. Cloudflare "error code: 502" plain text) — retry on 5xx.
+      const snippet = text.slice(0, 200).replace(/\s+/g, " ").trim();
+      lastErr = new Error(`Telegram ${method} gateway ${res.status}: ${snippet || "non-JSON body"}`);
+      if (res.status >= 500 && attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+        continue;
+      }
+      throw lastErr;
+    }
+
+    if (!res.ok || !data?.ok) {
+      if (res.status >= 500 && attempt < maxAttempts) {
+        lastErr = new Error(`Telegram ${method} failed [${res.status}]`);
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+        continue;
+      }
+      throw new Error(`Telegram ${method} failed [${res.status}]: ${JSON.stringify(data)}`);
+    }
+    return data.result as T;
   }
-  return data.result as T;
+  throw (lastErr instanceof Error ? lastErr : new Error(`Telegram ${method} failed`));
 }
 
 export async function sendMessage(chatId: number | string, text: string, extra: Record<string, unknown> = {}) {
