@@ -214,20 +214,26 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
   const extras = Array.isArray(post.extra_files) ? (post.extra_files as TgMedia[]) : [];
 
   try {
-    // Cover
+    // Cover — prefer file_id, fall back to copyMessage from source channel
     if (media.kind === "photo" && media.file_id) await sendPhoto(userChatId, media.file_id, { caption });
     else if (media.kind === "video" && media.file_id) await sendVideo(userChatId, media.file_id, { caption });
     else if (media.kind === "document" && media.file_id) await sendDocument(userChatId, media.file_id, { caption });
     else if (media.kind === "audio" && media.file_id) await sendAudio(userChatId, media.file_id, { caption });
-    else if (caption) await sendMessage(userChatId, caption);
+    else if (media.kind !== "text" && post.source_chat_id && post.source_message_id) {
+      await copyMessage(userChatId, post.source_chat_id, post.source_message_id, { caption });
+    } else if (caption) await sendMessage(userChatId, caption);
 
     // Extra files (PDFs etc.)
     for (const f of extras) {
-      if (!f.file_id) continue;
-      if (f.kind === "document") await sendDocument(userChatId, f.file_id);
-      else if (f.kind === "video") await sendVideo(userChatId, f.file_id);
-      else if (f.kind === "audio") await sendAudio(userChatId, f.file_id);
-      else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id);
+      if (f.file_id) {
+        if (f.kind === "document") await sendDocument(userChatId, f.file_id);
+        else if (f.kind === "video") await sendVideo(userChatId, f.file_id);
+        else if (f.kind === "audio") await sendAudio(userChatId, f.file_id);
+        else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id);
+      } else if (f.source_message_id && post.source_chat_id) {
+        // Backfilled extras — copy from source channel
+        await copyMessage(userChatId, post.source_chat_id, f.source_message_id);
+      }
     }
     return "";
   } catch (e: any) {
