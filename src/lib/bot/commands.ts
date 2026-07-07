@@ -3,8 +3,18 @@
 // (or null to skip). This keeps features modular — add a new file, register it here.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomBytes } from "crypto";
 import { sendMessage } from "./telegram";
-import { deliverFileByCode, deletePostByCode, repostByCode } from "./posting";
+import {
+  deliverFileByCode,
+  deletePostByCode,
+  repostByCode,
+  getSchedule,
+  saveSchedule,
+  queueSize,
+  dripQueue,
+  type Schedule,
+} from "./posting";
 
 export interface TgUser {
   id: number;
