@@ -458,6 +458,52 @@ register("resetall", {
   },
 });
 
+function parseToggle(arg: string | undefined): boolean | null {
+  if (arg === undefined) return null;
+  const v = arg.toLowerCase();
+  if (["1", "on", "true", "yes", "enable"].includes(v)) return true;
+  if (["0", "off", "false", "no", "disable"].includes(v)) return false;
+  return null;
+}
+
+register("protect", {
+  help: "/protect 1|0 — block forwarding/sharing of posts in main channels",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const val = parseToggle(args[0]);
+    if (val === null) return "Usage: /protect 1 (on) or /protect 0 (off)";
+    const { error } = await db.from("bot_settings").upsert({
+      key: "protect_content",
+      value: { enabled: val },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "set_protect_content", { enabled: val });
+    return val
+      ? "🔒 Protect content <b>ON</b> — future posts can't be forwarded or saved."
+      : "🔓 Protect content <b>OFF</b> — sharing/forwarding allowed.";
+  },
+});
+
+register("spoiler", {
+  help: "/spoiler 1|0 — post photos/videos as spoilers (tap to reveal)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const val = parseToggle(args[0]);
+    if (val === null) return "Usage: /spoiler 1 (on) or /spoiler 0 (off)";
+    const { error } = await db.from("bot_settings").upsert({
+      key: "spoiler_media",
+      value: { enabled: val },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "set_spoiler_media", { enabled: val });
+    return val
+      ? "🫥 Spoiler mode <b>ON</b> — photos/videos will be hidden until tapped."
+      : "👁️ Spoiler mode <b>OFF</b> — media posts as normal.";
+  },
+});
+
 register("genimporttoken", {
   help: "/genimporttoken — create a token for the MTProto backfill script (super-admin)",
   superOnly: true,
