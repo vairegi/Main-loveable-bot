@@ -504,7 +504,7 @@ register("spoiler", {
   },
 });
 
-register("genimporttoken_placeholder_marker", {
+register("genimporttoken", {
   help: "/genimporttoken — create a token for the MTProto backfill script (super-admin)",
   superOnly: true,
   handler: async ({ db, user }) => {
