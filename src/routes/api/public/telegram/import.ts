@@ -11,6 +11,7 @@ const MediaSchema = z.object({
   file_id: z.string().optional(),
   file_name: z.string().optional(),
   mime_type: z.string().optional(),
+  source_message_id: z.number().optional(),
 });
 
 const ImportSchema = z.object({

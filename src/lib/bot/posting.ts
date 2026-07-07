@@ -20,6 +20,7 @@ export interface TgMedia {
   file_id?: string;
   file_name?: string;
   mime_type?: string;
+  source_message_id?: number;
 }
 
 // Extract the primary media object from a Telegram message
@@ -173,8 +174,9 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
   const media = (post.media ?? {}) as TgMedia;
 
   for (const ch of mains) {
-    // Send the "cover" (image/video/text) with the Get File button — using file_id so we
-    // don't depend on the source message still existing.
+    // Send the "cover" (image/video/text) with the Get File button.
+    // Prefer file_id (live-captured posts). Fall back to copyMessage from source
+    // channel (backfilled posts have no Bot API file_id).
     let mainMessage: any;
     if (media.kind === "photo" && media.file_id) {
       mainMessage = await sendPhoto(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
@@ -184,6 +186,12 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
       mainMessage = await sendDocument(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
     } else if (media.kind === "audio" && media.file_id) {
       mainMessage = await sendAudio(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
+    } else if (media.kind !== "text" && post.source_chat_id && post.source_message_id) {
+      // Backfill fallback — copy the original message from the database channel
+      mainMessage = await copyMessage(ch.telegram_chat_id, post.source_chat_id, post.source_message_id, {
+        caption: captionText,
+        reply_markup: keyboard,
+      });
     } else {
       mainMessage = await sendMessage(ch.telegram_chat_id, captionText, { reply_markup: keyboard });
     }
@@ -206,20 +214,26 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
   const extras = Array.isArray(post.extra_files) ? (post.extra_files as TgMedia[]) : [];
 
   try {
-    // Cover
+    // Cover — prefer file_id, fall back to copyMessage from source channel
     if (media.kind === "photo" && media.file_id) await sendPhoto(userChatId, media.file_id, { caption });
     else if (media.kind === "video" && media.file_id) await sendVideo(userChatId, media.file_id, { caption });
     else if (media.kind === "document" && media.file_id) await sendDocument(userChatId, media.file_id, { caption });
     else if (media.kind === "audio" && media.file_id) await sendAudio(userChatId, media.file_id, { caption });
-    else if (caption) await sendMessage(userChatId, caption);
+    else if (media.kind !== "text" && post.source_chat_id && post.source_message_id) {
+      await copyMessage(userChatId, post.source_chat_id, post.source_message_id, { caption });
+    } else if (caption) await sendMessage(userChatId, caption);
 
     // Extra files (PDFs etc.)
     for (const f of extras) {
-      if (!f.file_id) continue;
-      if (f.kind === "document") await sendDocument(userChatId, f.file_id);
-      else if (f.kind === "video") await sendVideo(userChatId, f.file_id);
-      else if (f.kind === "audio") await sendAudio(userChatId, f.file_id);
-      else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id);
+      if (f.file_id) {
+        if (f.kind === "document") await sendDocument(userChatId, f.file_id);
+        else if (f.kind === "video") await sendVideo(userChatId, f.file_id);
+        else if (f.kind === "audio") await sendAudio(userChatId, f.file_id);
+        else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id);
+      } else if (f.source_message_id && post.source_chat_id) {
+        // Backfilled extras — copy from source channel
+        await copyMessage(userChatId, post.source_chat_id, f.source_message_id);
+      }
     }
     return "";
   } catch (e: any) {
