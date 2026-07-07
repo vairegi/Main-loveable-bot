@@ -274,6 +274,36 @@ export async function deletePostByCode(db: SupabaseClient, code: string): Promis
   return `🗑️ Deleted post <code>${code}</code> — ${deleted} copies removed${failed ? `, ${failed} failed` : ""}.`;
 }
 
+// -------- Queue reset helpers --------
+export async function resetPostedPosts(db: SupabaseClient, limit: number): Promise<{ reset: number; codes: string[]; error?: string }> {
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  const { data, error } = await db
+    .from("posts")
+    .select("id, code")
+    .not("posted_at", "is", null)
+    .order("posted_at", { ascending: false })
+    .limit(safeLimit);
+
+  if (error) return { reset: 0, codes: [], error: error.message };
+  if (!data?.length) return { reset: 0, codes: [] };
+
+  const ids = data.map((p) => p.id);
+  const { error: updateError } = await db.from("posts").update({ posted_at: null }).in("id", ids);
+  if (updateError) return { reset: 0, codes: [], error: updateError.message };
+
+  return { reset: data.length, codes: data.map((p) => p.code).filter(Boolean) };
+}
+
+export async function resetAllPostedPosts(db: SupabaseClient): Promise<{ reset: number; error?: string }> {
+  const { count, error } = await db
+    .from("posts")
+    .update({ posted_at: null }, { count: "exact" })
+    .not("posted_at", "is", null);
+
+  if (error) return { reset: 0, error: error.message };
+  return { reset: count ?? 0 };
+}
+
 // -------- Schedule types & helpers --------
 export type Schedule =
   | { enabled: false }

@@ -13,6 +13,8 @@ import {
   saveSchedule,
   queueSize,
   dripQueue,
+  resetPostedPosts,
+  resetAllPostedPosts,
   type Schedule,
 } from "./posting";
 
@@ -424,6 +426,32 @@ register("dripnow", {
     const r = await dripQueue(db, n);
     await logAction(db, user, "drip_now", { requested: n, ...r });
     return `📤 Drip complete — posted ${r.posted}, failed ${r.failed}.`;
+  },
+});
+
+register("reset", {
+  help: "/reset [n] — put the last N posted posts back in queue (default 3)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const n = Math.max(1, Math.min(500, Number(args[0]) || 3));
+    const result = await resetPostedPosts(db, n);
+    if (result.error) return `❌ Reset failed: ${result.error}`;
+    await logAction(db, user, "reset_posted", { requested: n, reset: result.reset, codes: result.codes });
+    if (!result.reset) return "ℹ️ No posted posts found to reset.";
+    const codes = result.codes.slice(0, 10).map((code) => `<code>${code}</code>`).join(", ");
+    return `✅ Reset <b>${result.reset}</b> post(s) back to queue.${codes ? `\nCodes: ${codes}` : ""}\nNow run /dripnow ${Math.min(n, result.reset)} to test again.`;
+  },
+});
+
+register("resetall", {
+  help: "/resetall — put every posted post back in queue",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    const result = await resetAllPostedPosts(db);
+    if (result.error) return `❌ Reset all failed: ${result.error}`;
+    await logAction(db, user, "reset_all_posted", { reset: result.reset });
+    if (!result.reset) return "ℹ️ No posted posts found to reset.";
+    return `✅ Reset <b>${result.reset}</b> posted post(s) back to queue.\nNow run /queue or /dripnow 3.`;
   },
 });
 
