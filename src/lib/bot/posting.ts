@@ -174,8 +174,9 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
   const media = (post.media ?? {}) as TgMedia;
 
   for (const ch of mains) {
-    // Send the "cover" (image/video/text) with the Get File button — using file_id so we
-    // don't depend on the source message still existing.
+    // Send the "cover" (image/video/text) with the Get File button.
+    // Prefer file_id (live-captured posts). Fall back to copyMessage from source
+    // channel (backfilled posts have no Bot API file_id).
     let mainMessage: any;
     if (media.kind === "photo" && media.file_id) {
       mainMessage = await sendPhoto(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
@@ -185,6 +186,12 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
       mainMessage = await sendDocument(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
     } else if (media.kind === "audio" && media.file_id) {
       mainMessage = await sendAudio(ch.telegram_chat_id, media.file_id, { caption: captionText, reply_markup: keyboard });
+    } else if (media.kind !== "text" && post.source_chat_id && post.source_message_id) {
+      // Backfill fallback — copy the original message from the database channel
+      mainMessage = await copyMessage(ch.telegram_chat_id, post.source_chat_id, post.source_message_id, {
+        caption: captionText,
+        reply_markup: keyboard,
+      });
     } else {
       mainMessage = await sendMessage(ch.telegram_chat_id, captionText, { reply_markup: keyboard });
     }
