@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomBytes } from "crypto";
 import {
   copyMessage,
+  forwardMessage,
   editMessageCaption,
   getBotUsername,
   sendAudio,
