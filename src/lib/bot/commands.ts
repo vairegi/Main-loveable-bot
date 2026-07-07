@@ -425,7 +425,10 @@ register("dripnow", {
     const n = Math.max(1, Math.min(50, Number(args[0]) || 1));
     const r = await dripQueue(db, n);
     await logAction(db, user, "drip_now", { requested: n, ...r });
-    return `📤 Drip complete — posted ${r.posted}, failed ${r.failed}.`;
+    const failureText = r.failures?.length
+      ? `\n\nFirst error: ${r.failures[0].reason}${r.failures[0].code ? `\nCode: <code>${r.failures[0].code}</code>` : ""}`
+      : "";
+    return `📤 Drip complete — posted ${r.posted}, failed ${r.failed}.${failureText}`;
   },
 });
 
