@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomBytes } from "crypto";
 import {
   copyMessage,
+  forwardMessage,
   editMessageCaption,
   getBotUsername,
   sendAudio,
@@ -220,6 +221,29 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
   const opts = await getPostingOptions(db);
   const protectExtra = opts.protect ? { protect_content: true } : {};
   const spoilerPhoto = opts.spoiler ? { has_spoiler: true } : {};
+
+  // Spoiler needs sendPhoto/sendVideo (copyMessage doesn't support has_spoiler).
+  // Backfilled posts have no file_id — hydrate one via forward+delete on the source channel.
+  if (opts.spoiler && !media.file_id && (media.kind === "photo" || media.kind === "video") && sourceChatId && media.source_message_id) {
+    try {
+      const fwd: any = await forwardMessage(sourceChatId, sourceChatId, media.source_message_id);
+      let fid: string | undefined;
+      if (media.kind === "photo" && Array.isArray(fwd?.photo) && fwd.photo.length) {
+        fid = fwd.photo[fwd.photo.length - 1].file_id;
+      } else if (media.kind === "video" && fwd?.video?.file_id) {
+        fid = fwd.video.file_id;
+      }
+      try { await deleteMessage(sourceChatId, fwd.message_id); } catch { /* ignore */ }
+      if (fid) {
+        media.file_id = fid;
+        const newMedia = { ...(post.media ?? {}), file_id: fid };
+        await db.from("posts").update({ media: newMedia }).eq("id", post.id);
+      }
+    } catch (e) {
+      console.error("hydrateFileId failed:", e);
+    }
+  }
+
 
   for (const ch of mains) {
     const mainChatId = chatId(ch.telegram_chat_id);
