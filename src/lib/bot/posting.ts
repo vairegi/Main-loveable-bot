@@ -285,30 +285,34 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
   const media = mediaWithSource((post.media ?? {}) as TgMedia, sourceMessageId);
   const caption = post.caption ?? "";
   const extras = Array.isArray(post.extra_files) ? (post.extra_files as TgMedia[]) : [];
+  const opts = await getPostingOptions(db);
+  const protectExtra = opts.protect ? { protect_content: true } : {};
+  const spoilerPhoto = opts.spoiler ? { has_spoiler: true } : {};
 
   try {
     // Cover — prefer file_id, fall back to copyMessage from source channel
-    if (media.kind === "photo" && media.file_id) await sendPhoto(userChatId, media.file_id, { caption });
-    else if (media.kind === "video" && media.file_id) await sendVideo(userChatId, media.file_id, { caption });
-    else if (media.kind === "document" && media.file_id) await sendDocument(userChatId, media.file_id, { caption });
-    else if (media.kind === "audio" && media.file_id) await sendAudio(userChatId, media.file_id, { caption });
+    if (media.kind === "photo" && media.file_id) await sendPhoto(userChatId, media.file_id, { caption, ...protectExtra, ...spoilerPhoto });
+    else if (media.kind === "video" && media.file_id) await sendVideo(userChatId, media.file_id, { caption, ...protectExtra, ...spoilerPhoto });
+    else if (media.kind === "document" && media.file_id) await sendDocument(userChatId, media.file_id, { caption, ...protectExtra });
+    else if (media.kind === "audio" && media.file_id) await sendAudio(userChatId, media.file_id, { caption, ...protectExtra });
     else if (media.kind !== "text" && sourceChatId && media.source_message_id) {
-      await copyMessage(userChatId, sourceChatId, media.source_message_id, { caption });
-    } else if (caption) await sendMessage(userChatId, caption);
+      await copyMessage(userChatId, sourceChatId, media.source_message_id, { caption, ...protectExtra });
+    } else if (caption) await sendMessage(userChatId, caption, { ...protectExtra });
 
     // Extra files (PDFs etc.)
     for (const [index, f] of extras.entries()) {
       const extraSourceMessageId = f.source_message_id ?? (sourceMessageId ? sourceMessageId + index + 1 : undefined);
       if (f.file_id) {
-        if (f.kind === "document") await sendDocument(userChatId, f.file_id);
-        else if (f.kind === "video") await sendVideo(userChatId, f.file_id);
-        else if (f.kind === "audio") await sendAudio(userChatId, f.file_id);
-        else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id);
+        if (f.kind === "document") await sendDocument(userChatId, f.file_id, { ...protectExtra });
+        else if (f.kind === "video") await sendVideo(userChatId, f.file_id, { ...protectExtra });
+        else if (f.kind === "audio") await sendAudio(userChatId, f.file_id, { ...protectExtra });
+        else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id, { ...protectExtra });
       } else if (extraSourceMessageId && sourceChatId) {
         // Backfilled extras — copy from source channel
-        await copyMessage(userChatId, sourceChatId, extraSourceMessageId);
+        await copyMessage(userChatId, sourceChatId, extraSourceMessageId, { ...protectExtra });
       }
     }
+
     return "";
   } catch (e: any) {
     console.error("Deliver failed:", e);
