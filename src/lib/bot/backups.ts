@@ -22,9 +22,10 @@ async function copyOrForward(
   toChatId: number | string,
   fromChatId: number | string,
   messageId: number,
+  extra: Record<string, unknown> = {},
 ): Promise<any> {
   try {
-    return await copyMessage(toChatId, fromChatId, messageId);
+    return await copyMessage(toChatId, fromChatId, messageId, extra);
   } catch (e: any) {
     const msg = String(e?.message ?? "");
     if (/can't be copied|can not be copied|cannot be copied/i.test(msg)) {
