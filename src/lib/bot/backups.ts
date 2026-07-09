@@ -80,11 +80,13 @@ async function mirrorOne(
 export async function backupAllToChannel(
   db: SupabaseClient,
   backupChatId: number,
+  limit?: number,
 ): Promise<BackupResult> {
   const { data: posts } = await db
     .from("posts")
     .select("id, source_chat_id, source_message_id, extra_files")
     .order("created_at", { ascending: true });
+
 
   if (!posts?.length) return { mirrored: 0, skipped: 0, failed: 0 };
 
@@ -99,6 +101,7 @@ export async function backupAllToChannel(
       skipped++;
       continue;
     }
+    if (typeof limit === "number" && mirrored >= limit) break;
     const r = await mirrorOne(db, p, backupChatId);
     if (r.ok) mirrored++;
     else {
@@ -106,6 +109,7 @@ export async function backupAllToChannel(
       if (!firstError) firstError = r.error;
     }
   }
+
 
   return { mirrored, skipped, failed, firstError };
 }
