@@ -101,6 +101,7 @@ export async function backupAllToChannel(
       skipped++;
       continue;
     }
+    if (typeof limit === "number" && mirrored >= limit) break;
     const r = await mirrorOne(db, p, backupChatId);
     if (r.ok) mirrored++;
     else {
@@ -108,6 +109,7 @@ export async function backupAllToChannel(
       if (!firstError) firstError = r.error;
     }
   }
+
 
   return { mirrored, skipped, failed, firstError };
 }
