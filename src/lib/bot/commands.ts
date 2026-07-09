@@ -17,7 +17,7 @@ import {
   resetAllPostedPosts,
   type Schedule,
 } from "./posting";
-import { backupAllToChannel, scanDatabaseToBackups } from "./backups";
+import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeBackupChannel } from "./backups";
 
 export interface TgUser {
   id: number;
@@ -126,7 +126,7 @@ register("help", {
       { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
       { title: "📝 Posting", cmds: ["setcaption", "pauseposting", "resumeposting", "repost", "deletepost", "recentposts"] },
       { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "schedulestatus", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
-      { title: "💾 Backups", cmds: ["addbackup", "listbackup", "backup", "backup10", "scandatabase"] },
+      { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler"] },
     ];
 
@@ -660,6 +660,34 @@ register("scandatabase", {
     }
     if (firstError) lines.push("", `First error: ${firstError.slice(0, 200)}`);
     return lines.join("\n");
+  },
+});
+
+register("removebackup", {
+  help: "/removebackup &lt;chat_id&gt; — unregister a backup channel and clear its mirror log",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const cid = Number(args[0]);
+    if (!cid) return "Usage: /removebackup &lt;chat_id&gt;";
+    const r = await removeBackupChannel(db, cid);
+    if (r.error) return `❌ ${r.error}`;
+    if (!r.removed) return `ℹ️ <code>${cid}</code> is not a registered backup channel.`;
+    await logAction(db, user, "remove_backup_channel", { chatId: cid, clearedCopies: r.clearedCopies });
+    return `✅ Backup channel <code>${cid}</code> removed.\nCleared <b>${r.clearedCopies}</b> mirror-tracking row(s).`;
+  },
+});
+
+register("resetbackup", {
+  help: "/resetbackup [chat_id] — clear mirror log so /backup starts from post 1 (all channels if no id)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const cid = args[0] ? Number(args[0]) : undefined;
+    if (args[0] && !cid) return "Usage: /resetbackup [chat_id]";
+    const r = await resetBackupTracking(db, cid);
+    if (r.error) return `❌ ${r.error}`;
+    await logAction(db, user, "reset_backup_tracking", { chatId: cid ?? null, cleared: r.cleared });
+    const scope = cid ? `<code>${cid}</code>` : "<b>all backup channels</b>";
+    return `♻️ Reset mirror log for ${scope} — cleared <b>${r.cleared}</b> row(s).\nRun /backup ${cid ?? "&lt;chat_id&gt;"} to mirror everything again from post 1.`;
   },
 });
 
