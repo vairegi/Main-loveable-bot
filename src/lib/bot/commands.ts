@@ -554,6 +554,92 @@ register("genimporttoken", {
   },
 });
 
+// ---------------- Backups ----------------
+
+register("addbackup", {
+  help: "/addbackup &lt;chat_id&gt; — register a backup channel",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const cid = Number(args[0]);
+    if (!cid) return "Usage: /addbackup &lt;chat_id&gt;\nThe bot must be an admin in that channel.";
+    const { error } = await db.from("channels").upsert({
+      telegram_chat_id: cid,
+      role: "backup",
+      added_by: user.id,
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "add_backup_channel", { chatId: cid });
+    return `✅ Backup channel registered: <code>${cid}</code>.\nUse /backup ${cid} to mirror the entire database into it.`;
+  },
+});
+
+register("listbackup", {
+  help: "/listbackup — show all backup channels",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { data } = await db
+      .from("channels")
+      .select("telegram_chat_id, title, created_at")
+      .eq("role", "backup")
+      .order("created_at");
+    if (!data?.length) return "No backup channels registered. Use /addbackup &lt;chat_id&gt;.";
+    const lines = ["<b>💾 Backup channels</b>"];
+    for (const c of data) {
+      const { count } = await db
+        .from("backup_copies")
+        .select("*", { count: "exact", head: true })
+        .eq("backup_chat_id", c.telegram_chat_id);
+      lines.push(`• <code>${c.telegram_chat_id}</code> ${c.title ?? ""} — ${count ?? 0} mirrored`);
+    }
+    return lines.join("\n");
+  },
+});
+
+register("backup", {
+  help: "/backup &lt;chat_id&gt; — mirror every stored post to that backup channel (skips already-mirrored)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const cid = Number(args[0]);
+    if (!cid) return "Usage: /backup &lt;chat_id&gt;\nRegister it first with /addbackup &lt;chat_id&gt;.";
+
+    // Ensure it's registered as a backup channel
+    const { data: ch } = await db
+      .from("channels")
+      .select("telegram_chat_id, role")
+      .eq("telegram_chat_id", cid)
+      .maybeSingle();
+    if (!ch || ch.role !== "backup") {
+      return `❌ <code>${cid}</code> is not registered as a backup channel. Run /addbackup ${cid} first.`;
+    }
+
+    const r = await backupAllToChannel(db, cid);
+    await logAction(db, user, "backup_channel", { chatId: cid, ...r });
+    const err = r.firstError ? `\n\nFirst error: ${r.firstError.slice(0, 200)}` : "";
+    return `💾 Backup to <code>${cid}</code> done — mirrored <b>${r.mirrored}</b>, skipped <b>${r.skipped}</b>, failed <b>${r.failed}</b>.${err}`;
+  },
+});
+
+register("scandatabase", {
+  help: "/scandatabase — forward any new database posts to all backup channels",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    const { channels, totalChannels } = await scanDatabaseToBackups(db);
+    if (!totalChannels) return "ℹ️ No backup channels registered. Use /addbackup &lt;chat_id&gt;.";
+
+    await logAction(db, user, "scan_database", { channels });
+    const lines: string[] = [`🔎 Scanned database → ${totalChannels} backup channel(s):`];
+    let firstError: string | undefined;
+    for (const { chatId: cid, result } of channels) {
+      lines.push(
+        `• <code>${cid}</code> — mirrored <b>${result.mirrored}</b>, skipped <b>${result.skipped}</b>, failed <b>${result.failed}</b>`,
+      );
+      if (!firstError && result.firstError) firstError = result.firstError;
+    }
+    if (firstError) lines.push("", `First error: ${firstError.slice(0, 200)}`);
+    return lines.join("\n");
+  },
+});
+
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
   const def = commands.get(commandName.toLowerCase());
   if (!def) return null;
