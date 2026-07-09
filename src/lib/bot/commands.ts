@@ -17,6 +17,7 @@ import {
   resetAllPostedPosts,
   type Schedule,
 } from "./posting";
+import { backupAllToChannel, scanDatabaseToBackups } from "./backups";
 
 export interface TgUser {
   id: number;
