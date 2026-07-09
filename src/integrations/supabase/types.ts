@@ -68,6 +68,38 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_copies: {
+        Row: {
+          backup_chat_id: number
+          backup_message_id: number | null
+          created_at: string
+          id: number
+          post_id: number
+        }
+        Insert: {
+          backup_chat_id: number
+          backup_message_id?: number | null
+          created_at?: string
+          id?: number
+          post_id: number
+        }
+        Update: {
+          backup_chat_id?: number
+          backup_message_id?: number | null
+          created_at?: string
+          id?: number
+          post_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "backup_copies_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bot_settings: {
         Row: {
           key: string
