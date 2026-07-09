@@ -301,6 +301,40 @@ register("setcaption", {
   },
 });
 
+register("postcaption", {
+  help: "/postcaption &lt;text&gt; — extra text appended below every main-channel post caption. Send with no text to clear.",
+  adminOnly: true,
+  handler: async ({ db, user, rawText }) => {
+    const text = rawText.replace(/^\/postcaption(@\S+)?\s*/i, "");
+    const { error } = await db.from("bot_settings").upsert({
+      key: "post_caption_extra",
+      value: { text },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "set_post_caption_extra", { text });
+    if (!text.trim()) return "✅ Post caption extra <b>cleared</b>. Main-channel posts will use only the template.";
+    return `✅ Post caption extra saved. It will be appended below every main-channel post caption:\n\n<code>${text.slice(0, 500)}</code>`;
+  },
+});
+
+register("filecaption", {
+  help: "/filecaption &lt;text&gt; — extra text appended below the caption when files are delivered to users. Send with no text to clear.",
+  adminOnly: true,
+  handler: async ({ db, user, rawText }) => {
+    const text = rawText.replace(/^\/filecaption(@\S+)?\s*/i, "");
+    const { error } = await db.from("bot_settings").upsert({
+      key: "file_caption_extra",
+      value: { text },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "set_file_caption_extra", { text });
+    if (!text.trim()) return "✅ File caption extra <b>cleared</b>. Delivered files will use only the original caption.";
+    return `✅ File caption extra saved. It will be appended below the file caption on delivery:\n\n<code>${text.slice(0, 500)}</code>`;
+  },
+});
+
 register("pauseposting", {
   help: "/pauseposting — pause auto-posting from the database channel",
   adminOnly: true,
