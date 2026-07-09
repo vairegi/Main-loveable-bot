@@ -4,7 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomBytes } from "crypto";
-import { sendMessage } from "./telegram";
+import { sendMessage, editMessageText } from "./telegram";
 import {
   deliverFileByCode,
   deletePostByCode,
@@ -631,9 +631,9 @@ register("listbackup", {
 });
 
 register("backup", {
-  help: "/backup &lt;chat_id&gt; — mirror every stored post to that backup channel (skips already-mirrored)",
+  help: "/backup &lt;chat_id&gt; — mirror stored posts to that backup channel with a live progress bar (chunked; re-run to continue)",
   adminOnly: true,
-  handler: async ({ db, user, args }) => {
+  handler: async ({ db, chatId, user, args }) => {
     const cid = Number(args[0]);
     if (!cid) return "Usage: /backup &lt;chat_id&gt;\nRegister it first with /addbackup &lt;chat_id&gt;.";
 
@@ -647,10 +647,57 @@ register("backup", {
       return `❌ <code>${cid}</code> is not registered as a backup channel. Run /addbackup ${cid} first.`;
     }
 
-    const r = await backupAllToChannel(db, cid);
-    await logAction(db, user, "backup_channel", { chatId: cid, ...r });
+    // Chunk size — fits inside the Cloudflare Workers wall-time budget with
+    // ~300 ms per post plus per-post subrequests. Increase carefully.
+    const BATCH = 15;
+
+    // Send an initial status message we will edit in place with a progress bar.
+    let statusMsgId: number | null = null;
+    try {
+      const m = await sendMessage(chatId, `💾 Starting backup to <code>${cid}</code>…`);
+      statusMsgId = m?.message_id ?? null;
+    } catch { /* ignore, we'll just return final summary */ }
+
+    const bar = (pct: number) => {
+      const filled = Math.max(0, Math.min(10, Math.round(pct / 10)));
+      return "▓".repeat(filled) + "░".repeat(10 - filled);
+    };
+
+    let lastEditAt = 0;
+    const r = await backupAllToChannel(db, cid, BATCH, async (p) => {
+      if (!statusMsgId) return;
+      // Throttle edits to ~1/sec to avoid Telegram edit flood-control.
+      const now = Date.now();
+      if (now - lastEditAt < 1000 && p.processed !== p.totalToDo && p.processed < BATCH) return;
+      lastEditAt = now;
+      const pct = p.totalAll ? Math.floor((p.doneAll / p.totalAll) * 100) : 0;
+      const text =
+        `💾 Backup to <code>${cid}</code>\n` +
+        `${bar(pct)}  <b>${pct}%</b>\n` +
+        `Overall: <b>${p.doneAll}</b> / ${p.totalAll} mirrored\n` +
+        `This run: ${p.mirrored} ok, ${p.failed} failed (of ${p.totalToDo} pending)`;
+      try { await editMessageText(chatId, statusMsgId, text); } catch { /* ignore */ }
+    });
+
+    await logAction(db, user, "backup_channel", { chatId: cid, mirrored: r.mirrored, failed: r.failed });
+
+    const pct = r.totalAll ? Math.floor((r.doneAll / r.totalAll) * 100) : 100;
+    const remaining = r.totalToDo - r.mirrored - r.failed;
     const err = r.firstError ? `\n\nFirst error: ${r.firstError.slice(0, 200)}` : "";
-    return `💾 Backup to <code>${cid}</code> done — mirrored <b>${r.mirrored}</b>, skipped <b>${r.skipped}</b>, failed <b>${r.failed}</b>.${err}`;
+    const more = remaining > 0
+      ? `\n\n▶️ <b>${remaining}</b> post(s) still pending. Run /backup ${cid} again to continue.`
+      : `\n\n✅ All caught up.`;
+
+    const finalText =
+      `💾 Backup to <code>${cid}</code>\n` +
+      `${bar(pct)}  <b>${pct}%</b>\n` +
+      `Overall: <b>${r.doneAll}</b> / ${r.totalAll} mirrored\n` +
+      `This run: mirrored <b>${r.mirrored}</b>, failed <b>${r.failed}</b>, already-had <b>${r.skipped}</b>.${more}${err}`;
+
+    if (statusMsgId) {
+      try { await editMessageText(chatId, statusMsgId, finalText); return null; } catch { /* fallthrough */ }
+    }
+    return finalText;
   },
 });
 

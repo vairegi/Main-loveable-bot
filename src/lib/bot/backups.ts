@@ -133,43 +133,74 @@ async function mirrorOne(
   }
 }
 
-// Mirror every stored post to ONE specific backup channel.
-// Skips posts already mirrored to that channel.
+// Mirror stored posts to ONE backup channel.
+// - `limit` caps how many NEW posts to mirror this call (default: unlimited, but
+//   in practice capped by the caller to fit inside the Worker time budget).
+// - `onProgress` fires after each post attempt with progress metrics.
+// - Adds a small delay between posts to avoid Telegram flood control.
 export async function backupAllToChannel(
   db: SupabaseClient,
   backupChatId: number,
   limit?: number,
-): Promise<BackupResult> {
+  onProgress?: (p: {
+    processed: number;   // attempts done this call
+    mirrored: number;    // ok this call
+    failed: number;      // failed this call
+    totalToDo: number;   // total un-mirrored at start of this call
+    totalAll: number;    // total posts in db
+    doneAll: number;     // already mirrored (before + during this call)
+  }) => Promise<void> | void,
+  delayMs = 300,
+): Promise<BackupResult & { totalAll: number; totalToDo: number; doneAll: number }> {
   const { data: posts } = await db
     .from("posts")
     .select("id, source_chat_id, source_message_id, extra_files, media, caption")
     .order("created_at", { ascending: true });
 
-
-  if (!posts?.length) return { mirrored: 0, skipped: 0, failed: 0 };
+  const totalAll = posts?.length ?? 0;
+  if (!posts?.length) {
+    return { mirrored: 0, skipped: 0, failed: 0, totalAll: 0, totalToDo: 0, doneAll: 0 };
+  }
 
   const done = await alreadyMirroredSet(db, backupChatId);
+  const alreadyDone = done.size;
+  const pending = posts.filter((p) => !done.has(Number(p.id)));
+  const totalToDo = pending.length;
+
   let mirrored = 0;
   let skipped = 0;
   let failed = 0;
   let firstError: string | undefined;
+  let processed = 0;
 
-  for (const p of posts) {
-    if (done.has(Number(p.id))) {
-      skipped++;
-      continue;
-    }
-    if (typeof limit === "number" && mirrored >= limit) break;
+  for (const p of pending) {
+    if (typeof limit === "number" && processed >= limit) break;
     const r = await mirrorOne(db, p, backupChatId);
+    processed++;
     if (r.ok) mirrored++;
     else {
       failed++;
       if (!firstError) firstError = r.error;
     }
+    if (onProgress) {
+      try {
+        await onProgress({
+          processed,
+          mirrored,
+          failed,
+          totalToDo,
+          totalAll,
+          doneAll: alreadyDone + mirrored,
+        });
+      } catch { /* ignore progress errors */ }
+    }
+    if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
   }
 
+  // Anything already mirrored before this call counts as skipped for the summary.
+  skipped = alreadyDone;
 
-  return { mirrored, skipped, failed, firstError };
+  return { mirrored, skipped, failed, firstError, totalAll, totalToDo, doneAll: alreadyDone + mirrored };
 }
 
 // Scan database for posts not yet mirrored to each backup channel,
