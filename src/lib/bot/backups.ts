@@ -4,15 +4,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { copyMessage, forwardMessage, sendPhoto, sendVideo, sendDocument, sendAudio } from "./telegram";
 
+async function getSettingText(db: SupabaseClient, key: string): Promise<string> {
+  const { data } = await db.from("bot_settings").select("value").eq("key", key).maybeSingle();
+  const v = (data?.value as { text?: string } | null) ?? null;
+  return (v?.text ?? "").trim();
+}
+
+function appendExtra(base: string, extra: string): string {
+  if (!extra) return base;
+  if (!base) return extra;
+  return `${base}\n\n${extra}`;
+}
+
 // Copy a message, falling back to forward when Telegram says it can't be copied
 // (service messages, protected content, etc.).
 async function copyOrForward(
   toChatId: number | string,
   fromChatId: number | string,
   messageId: number,
+  extra: Record<string, unknown> = {},
 ): Promise<any> {
   try {
-    return await copyMessage(toChatId, fromChatId, messageId);
+    return await copyMessage(toChatId, fromChatId, messageId, extra);
   } catch (e: any) {
     const msg = String(e?.message ?? "");
     if (/can't be copied|can not be copied|cannot be copied/i.test(msg)) {
@@ -61,36 +74,44 @@ async function mirrorOne(
   const dest = chatId(backupChatId);
   const from = chatId(sourceChatId);
   const media = (post.media ?? {}) as { kind?: string; file_id?: string };
-  const caption = (post.caption ?? "") as string;
+  const baseCaption = (post.caption ?? "") as string;
+  const postExtra = await getSettingText(db, "post_caption_extra");
+  const fileExtra = await getSettingText(db, "file_caption_extra");
+  const caption = appendExtra(baseCaption, postExtra);
 
   try {
     // Mirror the main message. If it's a photo/video with a stored file_id,
     // re-send it with has_spoiler so the backup channel gets a spoiler-covered
-    // media. Otherwise fall back to copy/forward.
+    // media. Otherwise fall back to copy/forward (with caption override when
+    // an extra caption is configured).
     let main: any;
     if (media.kind === "photo" && media.file_id) {
       main = await sendPhoto(dest, media.file_id, { caption, has_spoiler: true });
     } else if (media.kind === "video" && media.file_id) {
       main = await sendVideo(dest, media.file_id, { caption, has_spoiler: true });
     } else {
-      main = await copyOrForward(dest, from, Number(sourceMessageId));
+      const copyExtra = postExtra ? { caption } : {};
+      main = await copyOrForward(dest, from, Number(sourceMessageId), copyExtra);
     }
 
-    // Mirror extra files (docs, etc.) — best effort
+    // Mirror extra files (docs, etc.) — best effort. Append file_caption_extra
+    // so backup files carry the same extra caption users receive.
     const extras = Array.isArray(post.extra_files) ? post.extra_files : [];
     for (const [i, f] of extras.entries()) {
       const smid = f?.source_message_id ?? Number(sourceMessageId) + i + 1;
+      const fCaption = fileExtra;
+      const fOpt: Record<string, unknown> = fCaption ? { caption: fCaption } : {};
       try {
         if (f?.kind === "photo" && f.file_id) {
-          await sendPhoto(dest, f.file_id, { has_spoiler: true });
+          await sendPhoto(dest, f.file_id, { has_spoiler: true, ...fOpt });
         } else if (f?.kind === "video" && f.file_id) {
-          await sendVideo(dest, f.file_id, { has_spoiler: true });
+          await sendVideo(dest, f.file_id, { has_spoiler: true, ...fOpt });
         } else if (f?.kind === "document" && f.file_id) {
-          await sendDocument(dest, f.file_id, {});
+          await sendDocument(dest, f.file_id, fOpt);
         } else if (f?.kind === "audio" && f.file_id) {
-          await sendAudio(dest, f.file_id, {});
+          await sendAudio(dest, f.file_id, fOpt);
         } else if (smid) {
-          await copyOrForward(dest, from, Number(smid));
+          await copyOrForward(dest, from, Number(smid), fOpt);
         }
       } catch (e) {
         console.error("backup extra failed:", e);
