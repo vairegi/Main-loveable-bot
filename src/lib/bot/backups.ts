@@ -4,6 +4,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { copyMessage, forwardMessage, sendPhoto, sendVideo, sendDocument, sendAudio } from "./telegram";
 
+async function getSettingText(db: SupabaseClient, key: string): Promise<string> {
+  const { data } = await db.from("bot_settings").select("value").eq("key", key).maybeSingle();
+  const v = (data?.value as { text?: string } | null) ?? null;
+  return (v?.text ?? "").trim();
+}
+
+function appendExtra(base: string, extra: string): string {
+  if (!extra) return base;
+  if (!base) return extra;
+  return `${base}\n\n${extra}`;
+}
+
 // Copy a message, falling back to forward when Telegram says it can't be copied
 // (service messages, protected content, etc.).
 async function copyOrForward(
