@@ -31,6 +31,7 @@ export interface CmdCtx {
   user: TgUser;
   args: string[];
   rawText: string;
+  rawHtml: string;
   isAdmin: boolean;
   isSuperAdmin: boolean;
 }
