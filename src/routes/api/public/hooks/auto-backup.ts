@@ -40,7 +40,9 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
         const { sendMessage, editMessageText } = await import("@/lib/bot/telegram");
         const db = getAdminDb();
 
-        const BATCH = 12;
+        // Keep small: Cloudflare Workers wall-time ~30s, each post ~1–2s
+        // (Telegram round-trip + 300ms delay). 8 fits comfortably.
+        const BATCH = 8;
         const nowIso = new Date().toISOString();
         const nowMs = Date.now();
 
