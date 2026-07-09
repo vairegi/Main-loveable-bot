@@ -2,7 +2,7 @@
 // Tracks per-channel mirror state in `backup_copies` so runs are incremental.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { copyMessage, forwardMessage } from "./telegram";
+import { copyMessage, forwardMessage, sendPhoto, sendVideo, sendDocument, sendAudio } from "./telegram";
 
 // Copy a message, falling back to forward when Telegram says it can't be copied
 // (service messages, protected content, etc.).
@@ -58,21 +58,40 @@ async function mirrorOne(
     return { ok: false, error: "post has no source_chat_id / source_message_id" };
   }
 
+  const dest = chatId(backupChatId);
+  const from = chatId(sourceChatId);
+  const media = (post.media ?? {}) as { kind?: string; file_id?: string };
+  const caption = (post.caption ?? "") as string;
+
   try {
-    // Mirror the main message
-    const main: any = await copyOrForward(
-      chatId(backupChatId),
-      chatId(sourceChatId),
-      Number(sourceMessageId),
-    );
+    // Mirror the main message. If it's a photo/video with a stored file_id,
+    // re-send it with has_spoiler so the backup channel gets a spoiler-covered
+    // media. Otherwise fall back to copy/forward.
+    let main: any;
+    if (media.kind === "photo" && media.file_id) {
+      main = await sendPhoto(dest, media.file_id, { caption, has_spoiler: true });
+    } else if (media.kind === "video" && media.file_id) {
+      main = await sendVideo(dest, media.file_id, { caption, has_spoiler: true });
+    } else {
+      main = await copyOrForward(dest, from, Number(sourceMessageId));
+    }
 
     // Mirror extra files (docs, etc.) — best effort
     const extras = Array.isArray(post.extra_files) ? post.extra_files : [];
     for (const [i, f] of extras.entries()) {
       const smid = f?.source_message_id ?? Number(sourceMessageId) + i + 1;
-      if (!smid) continue;
       try {
-        await copyOrForward(chatId(backupChatId), chatId(sourceChatId), Number(smid));
+        if (f?.kind === "photo" && f.file_id) {
+          await sendPhoto(dest, f.file_id, { has_spoiler: true });
+        } else if (f?.kind === "video" && f.file_id) {
+          await sendVideo(dest, f.file_id, { has_spoiler: true });
+        } else if (f?.kind === "document" && f.file_id) {
+          await sendDocument(dest, f.file_id, {});
+        } else if (f?.kind === "audio" && f.file_id) {
+          await sendAudio(dest, f.file_id, {});
+        } else if (smid) {
+          await copyOrForward(dest, from, Number(smid));
+        }
       } catch (e) {
         console.error("backup extra failed:", e);
       }
