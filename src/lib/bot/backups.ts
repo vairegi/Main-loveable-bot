@@ -121,7 +121,7 @@ export async function backupAllToChannel(
 ): Promise<BackupResult> {
   const { data: posts } = await db
     .from("posts")
-    .select("id, source_chat_id, source_message_id, extra_files")
+    .select("id, source_chat_id, source_message_id, extra_files, media, caption")
     .order("created_at", { ascending: true });
 
 
