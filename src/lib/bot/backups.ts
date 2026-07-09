@@ -1,0 +1,126 @@
+// Backup mirroring — forwards raw database-channel posts to backup channels.
+// Tracks per-channel mirror state in `backup_copies` so runs are incremental.
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { copyMessage } from "./telegram";
+
+export interface BackupResult {
+  mirrored: number;
+  skipped: number;
+  failed: number;
+  firstError?: string;
+}
+
+function chatId(value: number | string): number | string {
+  return typeof value === "number" && Number.isFinite(value) ? String(Math.trunc(value)) : value;
+}
+
+async function listBackupChannels(db: SupabaseClient): Promise<number[]> {
+  const { data } = await db.from("channels").select("telegram_chat_id").eq("role", "backup");
+  return (data ?? []).map((c) => Number(c.telegram_chat_id)).filter((n) => Number.isFinite(n));
+}
+
+// Return post ids already mirrored to a given backup channel
+async function alreadyMirroredSet(db: SupabaseClient, backupChatId: number): Promise<Set<number>> {
+  const { data } = await db
+    .from("backup_copies")
+    .select("post_id")
+    .eq("backup_chat_id", backupChatId);
+  return new Set((data ?? []).map((r) => Number(r.post_id)));
+}
+
+async function mirrorOne(
+  db: SupabaseClient,
+  post: any,
+  backupChatId: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const sourceChatId = post.source_chat_id;
+  const sourceMessageId = post.source_message_id;
+  if (!sourceChatId || !sourceMessageId) {
+    return { ok: false, error: "post has no source_chat_id / source_message_id" };
+  }
+
+  try {
+    // Mirror the main message
+    const main: any = await copyMessage(
+      chatId(backupChatId),
+      chatId(sourceChatId),
+      Number(sourceMessageId),
+    );
+
+    // Mirror extra files (docs, etc.) — best effort
+    const extras = Array.isArray(post.extra_files) ? post.extra_files : [];
+    for (const [i, f] of extras.entries()) {
+      const smid = f?.source_message_id ?? Number(sourceMessageId) + i + 1;
+      if (!smid) continue;
+      try {
+        await copyMessage(chatId(backupChatId), chatId(sourceChatId), Number(smid));
+      } catch (e) {
+        console.error("backup extra failed:", e);
+      }
+    }
+
+    await db.from("backup_copies").upsert(
+      {
+        post_id: post.id,
+        backup_chat_id: backupChatId,
+        backup_message_id: main?.message_id ?? null,
+      },
+      { onConflict: "post_id,backup_chat_id" },
+    );
+
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? "unknown error" };
+  }
+}
+
+// Mirror every stored post to ONE specific backup channel.
+// Skips posts already mirrored to that channel.
+export async function backupAllToChannel(
+  db: SupabaseClient,
+  backupChatId: number,
+): Promise<BackupResult> {
+  const { data: posts } = await db
+    .from("posts")
+    .select("id, source_chat_id, source_message_id, extra_files")
+    .order("created_at", { ascending: true });
+
+  if (!posts?.length) return { mirrored: 0, skipped: 0, failed: 0 };
+
+  const done = await alreadyMirroredSet(db, backupChatId);
+  let mirrored = 0;
+  let skipped = 0;
+  let failed = 0;
+  let firstError: string | undefined;
+
+  for (const p of posts) {
+    if (done.has(Number(p.id))) {
+      skipped++;
+      continue;
+    }
+    const r = await mirrorOne(db, p, backupChatId);
+    if (r.ok) mirrored++;
+    else {
+      failed++;
+      if (!firstError) firstError = r.error;
+    }
+  }
+
+  return { mirrored, skipped, failed, firstError };
+}
+
+// Scan database for posts not yet mirrored to each backup channel,
+// forward the missing ones to that channel.
+export async function scanDatabaseToBackups(db: SupabaseClient): Promise<{
+  channels: { chatId: number; result: BackupResult }[];
+  totalChannels: number;
+}> {
+  const backups = await listBackupChannels(db);
+  const results: { chatId: number; result: BackupResult }[] = [];
+  for (const cid of backups) {
+    const r = await backupAllToChannel(db, cid);
+    results.push({ chatId: cid, result: r });
+  }
+  return { channels: results, totalChannels: backups.length };
+}
