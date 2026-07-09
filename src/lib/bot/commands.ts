@@ -119,12 +119,44 @@ register("start", {
 register("help", {
   help: "/help — list commands you can use",
   handler: async ({ isAdmin, isSuperAdmin }) => {
-    const lines = ["<b>Available commands:</b>", ""];
+    const categories: { title: string; cmds: string[] }[] = [
+      { title: "👤 General", cmds: ["start", "help", "whoami"] },
+      { title: "🛡️ Admin management", cmds: ["addadmin", "removeadmin", "listadmins", "genimporttoken"] },
+      { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
+      { title: "📝 Posting", cmds: ["setcaption", "pauseposting", "resumeposting", "repost", "deletepost", "recentposts"] },
+      { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "schedulestatus", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
+      { title: "🔒 Content controls", cmds: ["protect", "spoiler"] },
+    ];
+
+    const lines: string[] = ["<b>📖 Available commands</b>"];
+    const seen = new Set<string>();
+
+    for (const cat of categories) {
+      const catLines: string[] = [];
+      for (const name of cat.cmds) {
+        const def = commands.get(name);
+        if (!def) continue;
+        if (def.superOnly && !isSuperAdmin) continue;
+        if (def.adminOnly && !isAdmin) continue;
+        catLines.push("• " + def.help);
+        seen.add(name);
+      }
+      if (catLines.length) {
+        lines.push("", `<b>${cat.title}</b>`, ...catLines);
+      }
+    }
+
+    const extras: string[] = [];
     for (const [name, def] of commands) {
+      if (seen.has(name)) continue;
       if (def.superOnly && !isSuperAdmin) continue;
       if (def.adminOnly && !isAdmin) continue;
-      lines.push(def.help);
+      extras.push("• " + def.help);
+      seen.add(name);
     }
+    if (extras.length) lines.push("", "<b>✨ Other</b>", ...extras);
+
+    lines.push("", "<i>Tip: most commands are admin-only. Use /whoami to check your role.</i>");
     return lines.join("\n");
   },
 });
