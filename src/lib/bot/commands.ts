@@ -619,6 +619,29 @@ register("backup", {
   },
 });
 
+register("backup10", {
+  help: "/backup10 &lt;chat_id&gt; — test: mirror only the next 10 un-mirrored posts to that backup channel",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const cid = Number(args[0]);
+    if (!cid) return "Usage: /backup10 &lt;chat_id&gt;\nRegister it first with /addbackup &lt;chat_id&gt;.";
+
+    const { data: ch } = await db
+      .from("channels")
+      .select("telegram_chat_id, role")
+      .eq("telegram_chat_id", cid)
+      .maybeSingle();
+    if (!ch || ch.role !== "backup") {
+      return `❌ <code>${cid}</code> is not registered as a backup channel. Run /addbackup ${cid} first.`;
+    }
+
+    const r = await backupAllToChannel(db, cid, 10);
+    await logAction(db, user, "backup_channel_test10", { chatId: cid, ...r });
+    const err = r.firstError ? `\n\nFirst error: ${r.firstError.slice(0, 200)}` : "";
+    return `🧪 Test backup (max 10) to <code>${cid}</code> — mirrored <b>${r.mirrored}</b>, skipped <b>${r.skipped}</b>, failed <b>${r.failed}</b>.\n\nIf this looks good, run /backup ${cid} for the full mirror.${err}`;
+  },
+});
+
 register("scandatabase", {
   help: "/scandatabase — forward any new database posts to all backup channels",
   adminOnly: true,
