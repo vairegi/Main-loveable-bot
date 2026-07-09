@@ -81,6 +81,17 @@ async function getCaptionTemplate(db: SupabaseClient): Promise<string> {
   return v?.text ?? "{caption}\n\n🎬 Tap below to get the file.";
 }
 
+async function getExtraCaption(db: SupabaseClient, key: "post_caption_extra" | "file_caption_extra"): Promise<string> {
+  const v = await getSetting<{ text: string }>(db, key);
+  return (v?.text ?? "").trim();
+}
+
+function appendExtra(base: string, extra: string): string {
+  if (!extra) return base;
+  if (!base) return extra;
+  return `${base}\n\n${extra}`;
+}
+
 function renderCaption(template: string, ctx: { caption: string; code: string }): string {
   return template
     .replace(/\{caption\}/g, ctx.caption ?? "")
