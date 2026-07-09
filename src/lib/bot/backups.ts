@@ -60,7 +60,7 @@ async function mirrorOne(
 
   try {
     // Mirror the main message
-    const main: any = await copyMessage(
+    const main: any = await copyOrForward(
       chatId(backupChatId),
       chatId(sourceChatId),
       Number(sourceMessageId),
@@ -72,7 +72,7 @@ async function mirrorOne(
       const smid = f?.source_message_id ?? Number(sourceMessageId) + i + 1;
       if (!smid) continue;
       try {
-        await copyMessage(chatId(backupChatId), chatId(sourceChatId), Number(smid));
+        await copyOrForward(chatId(backupChatId), chatId(sourceChatId), Number(smid));
       } catch (e) {
         console.error("backup extra failed:", e);
       }
