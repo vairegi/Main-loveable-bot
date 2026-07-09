@@ -52,6 +52,12 @@ export async function tg<T = any>(method: string, body: Record<string, unknown> 
     }
 
     if (!res.ok || !data?.ok) {
+      const retryAfter = Number(data?.parameters?.retry_after);
+      if ((res.status === 429 || data?.error_code === 429) && Number.isFinite(retryAfter) && attempt < maxAttempts) {
+        lastErr = new Error(`Telegram ${method} 429 retry_after=${retryAfter}s`);
+        await new Promise((r) => setTimeout(r, Math.min(retryAfter, 30) * 1000 + 250));
+        continue;
+      }
       if (res.status >= 500 && attempt < maxAttempts) {
         lastErr = new Error(`Telegram ${method} failed [${res.status}]`);
         await new Promise((r) => setTimeout(r, 500 * attempt));
@@ -124,6 +130,21 @@ export async function editMessageCaption(
     chat_id: chatId,
     message_id: messageId,
     caption,
+    parse_mode: "HTML",
+    ...extra,
+  });
+}
+
+export async function editMessageText(
+  chatId: number | string,
+  messageId: number,
+  text: string,
+  extra: Record<string, unknown> = {},
+) {
+  return tg("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
     parse_mode: "HTML",
     ...extra,
   });
