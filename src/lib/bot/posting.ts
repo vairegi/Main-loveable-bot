@@ -224,7 +224,10 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
 
   const botUsername = await getBotUsername();
   const template = await getCaptionTemplate(db);
-  const captionText = renderCaption(template, { caption: post.caption ?? "", code: post.code });
+  const captionText = appendExtra(
+    renderCaption(template, { caption: post.caption ?? "", code: post.code }),
+    await getExtraCaption(db, "post_caption_extra"),
+  );
   const keyboard = buildGetFileKeyboard(botUsername, post.code);
   const sourceChatId = post.source_chat_id ? chatId(post.source_chat_id) : undefined;
   const sourceMessageId = numericMessageId(post.source_message_id);
