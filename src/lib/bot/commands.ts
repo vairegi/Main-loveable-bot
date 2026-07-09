@@ -126,6 +126,7 @@ register("help", {
       { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
       { title: "📝 Posting", cmds: ["setcaption", "pauseposting", "resumeposting", "repost", "deletepost", "recentposts"] },
       { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "schedulestatus", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
+      { title: "💾 Backups", cmds: ["addbackup", "listbackup", "backup", "scandatabase"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler"] },
     ];
 
