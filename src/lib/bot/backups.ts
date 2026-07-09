@@ -165,3 +165,35 @@ export async function scanDatabaseToBackups(db: SupabaseClient): Promise<{
   }
   return { channels: results, totalChannels: backups.length };
 }
+
+// Clear the mirror-tracking table so /backup starts from post 1 again.
+// If backupChatId is provided, only that channel is reset; otherwise all channels.
+export async function resetBackupTracking(
+  db: SupabaseClient,
+  backupChatId?: number,
+): Promise<{ cleared: number; error?: string }> {
+  const q = db.from("backup_copies").delete({ count: "exact" });
+  const { count, error } = backupChatId
+    ? await q.eq("backup_chat_id", backupChatId)
+    : await q.gte("id", 0);
+  if (error) return { cleared: 0, error: error.message };
+  return { cleared: count ?? 0 };
+}
+
+// Remove a backup channel registration (and its mirror-tracking rows).
+export async function removeBackupChannel(
+  db: SupabaseClient,
+  backupChatId: number,
+): Promise<{ removed: boolean; clearedCopies: number; error?: string }> {
+  const { count: clearedCopies } = await db
+    .from("backup_copies")
+    .delete({ count: "exact" })
+    .eq("backup_chat_id", backupChatId);
+  const { error, count } = await db
+    .from("channels")
+    .delete({ count: "exact" })
+    .eq("telegram_chat_id", backupChatId)
+    .eq("role", "backup");
+  if (error) return { removed: false, clearedCopies: clearedCopies ?? 0, error: error.message };
+  return { removed: (count ?? 0) > 0, clearedCopies: clearedCopies ?? 0 };
+}
