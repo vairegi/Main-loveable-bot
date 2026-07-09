@@ -2,7 +2,25 @@
 // Tracks per-channel mirror state in `backup_copies` so runs are incremental.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { copyMessage } from "./telegram";
+import { copyMessage, forwardMessage } from "./telegram";
+
+// Copy a message, falling back to forward when Telegram says it can't be copied
+// (service messages, protected content, etc.).
+async function copyOrForward(
+  toChatId: number | string,
+  fromChatId: number | string,
+  messageId: number,
+): Promise<any> {
+  try {
+    return await copyMessage(toChatId, fromChatId, messageId);
+  } catch (e: any) {
+    const msg = String(e?.message ?? "");
+    if (/can't be copied|can not be copied|cannot be copied/i.test(msg)) {
+      return await forwardMessage(toChatId, fromChatId, messageId);
+    }
+    throw e;
+  }
+}
 
 export interface BackupResult {
   mirrored: number;
