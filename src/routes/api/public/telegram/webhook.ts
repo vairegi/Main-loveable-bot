@@ -79,12 +79,16 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           .eq("telegram_user_id", user.id)
           .maybeSingle();
 
+        const { messageToHtml } = await import("@/lib/bot/entities");
+        const rawHtml = messageToHtml(text, message.entities);
+
         const ctx: CmdCtx = {
           db,
           chatId: message.chat.id,
           user,
           args,
           rawText: text,
+          rawHtml,
           isAdmin: !!adminRow,
           isSuperAdmin: !!adminRow?.is_super_admin,
         };
