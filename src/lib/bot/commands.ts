@@ -814,36 +814,50 @@ register("autodelete", {
 
 register("fsub", {
   help:
-    "/fsub &lt;chat_id&gt; — require users to join this channel before Get File works\n" +
-    "/fsub list — show forced channels\n" +
-    "/fsub remove &lt;chat_id&gt; — stop requiring that channel",
+    "/fsub &lt;chat_id&gt; &lt;invite_link&gt; — require users to join this channel before Get File works. Use an approval-required invite link so members appear as Join Requests you can approve later.",
   adminOnly: true,
   handler: async ({ db, user, args }) => {
-    const sub = args[0]?.toLowerCase();
-    if (!sub) {
-      return "Usage:\n/fsub &lt;chat_id&gt; — add\n/fsub list\n/fsub remove &lt;chat_id&gt;\n\nThe bot must be an admin in each forced channel. For approval-required invite links, users get in as soon as they tap Request to Join — you can approve later.";
-    }
-    if (sub === "list") {
-      const chs = await listForceSubChannels(db);
-      if (!chs.length) return "No forced-subscription channels set. Use /fsub &lt;chat_id&gt; to add one.";
-      return ["<b>🔒 Forced-subscription channels</b>", ...chs.map((c) => `• <code>${c.chat_id}</code> ${c.title ?? ""}`)].join("\n");
-    }
-    if (sub === "remove") {
-      const cid = Number(args[1]);
-      if (!cid) return "Usage: /fsub remove &lt;chat_id&gt;";
-      const { error } = await removeForceSubChannel(db, cid);
-      if (error) return `❌ ${error.message}`;
-      await logAction(db, user, "fsub_remove", { chatId: cid });
-      return `✅ Removed forced channel <code>${cid}</code>.`;
-    }
     const cid = Number(args[0]);
-    if (!cid) return "Usage: /fsub &lt;chat_id&gt; (the bot must be admin there)";
-    const { error } = await addForceSubChannel(db, cid, user.id);
+    const link = args[1];
+    if (!cid || !link) {
+      return "Usage: /fsub &lt;chat_id&gt; &lt;invite_link&gt;\n\nCreate an invite link in the channel with <b>Request Admin Approval</b> turned on, then pass that link here. Users will tap Request to Join; the bot marks them satisfied immediately, and you approve the request in Telegram whenever you like.\n\nSee also: /fsublist, /fsubremove &lt;chat_id&gt;.";
+    }
+    if (!/^https?:\/\/(t\.me|telegram\.me)\//i.test(link)) {
+      return "❌ The invite link must be a full <code>https://t.me/…</code> URL.";
+    }
+    const { error } = await addForceSubChannel(db, cid, user.id, link);
     if (error) return `❌ ${error.message}`;
-    await logAction(db, user, "fsub_add", { chatId: cid });
-    return `✅ Users must now join <code>${cid}</code> to receive files.\nMake sure the bot is an admin (with invite rights) in that channel. For approval-required links, the bot marks users as satisfied as soon as they Request to Join.`;
+    await logAction(db, user, "fsub_add", { chatId: cid, link });
+    return `✅ Users must now request to join <code>${cid}</code> to receive files.\nInvite link: ${link}`;
   },
 });
+
+register("fsublist", {
+  help: "/fsublist — show forced-subscription channels",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const chs = await listForceSubChannels(db);
+    if (!chs.length) return "No forced-subscription channels set. Use /fsub &lt;chat_id&gt; &lt;invite_link&gt; to add one.";
+    return [
+      "<b>🔒 Forced-subscription channels</b>",
+      ...chs.map((c) => `• <code>${c.chat_id}</code> ${c.title ?? ""}\n   ${c.invite_link ?? "(no link)"}`),
+    ].join("\n");
+  },
+});
+
+register("fsubremove", {
+  help: "/fsubremove &lt;chat_id&gt; — stop requiring that channel",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const cid = Number(args[0]);
+    if (!cid) return "Usage: /fsubremove &lt;chat_id&gt;";
+    const { error } = await removeForceSubChannel(db, cid);
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "fsub_remove", { chatId: cid });
+    return `✅ Removed forced channel <code>${cid}</code>.`;
+  },
+});
+
 
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
   const def = commands.get(commandName.toLowerCase());
