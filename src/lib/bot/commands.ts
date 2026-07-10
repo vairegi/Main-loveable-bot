@@ -132,6 +132,7 @@ register("help", {
       { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "schedulestatus", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
       { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub", "fsublist", "fsubremove"] },
+      { title: "📊 Users & moderation", cmds: ["stats", "broadcast", "ban", "unban", "banlist"] },
     ];
 
     const lines: string[] = ["<b>📖 Available commands</b>"];
