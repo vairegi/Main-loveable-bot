@@ -90,6 +90,10 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 async function loadBroadcastTargets(db: SupabaseClient): Promise<{ users: { telegram_user_id: number }[]; error?: string }> {
   const users: { telegram_user_id: number }[] = [];
   const seen = new Set<number>();
@@ -995,7 +999,7 @@ register("broadcast", {
         if (reply) {
           // forwardMessage keeps the original "Forwarded from <channel>" header
           // when the replied message was itself forwarded from a channel.
-          await forwardMessage(u.telegram_user_id, chatId, reply.message_id);
+          await forwardMessage(u.telegram_user_id, chatId, reply.message_id, { disable_notification: false });
         } else {
           await sendMessage(u.telegram_user_id, text);
         }
@@ -1003,7 +1007,7 @@ register("broadcast", {
       } catch (e: any) {
         failed++;
         const err = String(e?.message ?? e ?? "unknown");
-        if (failedSamples.length < 3) failedSamples.push(`<code>${u.telegram_user_id}</code>: ${err.slice(0, 160)}`);
+        if (failedSamples.length < 3) failedSamples.push(`<code>${u.telegram_user_id}</code>: ${escapeHtml(err.slice(0, 160))}`);
 
         // Telegram returns 403 when a user blocked the bot or has not started it.
         // Mark them banned so future broadcasts don't keep counting them as targets.
