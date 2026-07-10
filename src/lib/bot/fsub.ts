@@ -57,21 +57,18 @@ async function isMember(chatId: number, userId: number): Promise<boolean> {
   }
 }
 
-async function chatLink(chatId: number): Promise<{ url: string; title: string }> {
+async function chatLink(
+  chatId: number,
+  storedLink?: string | null,
+): Promise<{ url: string; title: string }> {
+  let title = String(chatId);
   try {
     const chat: any = await tg("getChat", { chat_id: chatId });
-    const title = chat?.title ?? String(chatId);
-    if (chat?.username) return { url: `https://t.me/${chat.username}`, title };
-    if (chat?.invite_link) return { url: chat.invite_link, title };
-    // Create an invite link with join request (requires the bot to be admin with invite rights).
-    try {
-      const inv: any = await tg("createChatInviteLink", { chat_id: chatId, creates_join_request: true });
-      if (inv?.invite_link) return { url: inv.invite_link, title };
-    } catch { /* ignore */ }
-    return { url: `https://t.me/c/${String(chatId).replace(/^-100/, "")}`, title };
-  } catch {
-    return { url: `https://t.me/c/${String(chatId).replace(/^-100/, "")}`, title: String(chatId) };
-  }
+    title = chat?.title ?? String(chatId);
+  } catch { /* ignore */ }
+  // Admin-provided link wins — no auto-creation of invite links.
+  if (storedLink) return { url: storedLink, title };
+  return { url: `https://t.me/c/${String(chatId).replace(/^-100/, "")}`, title };
 }
 
 // Returns channels the user still needs to join (i.e. not a member AND
@@ -93,11 +90,12 @@ export async function unmetForceSubs(
   for (const c of channels) {
     if (satSet.has(c.chat_id)) continue;
     if (await isMember(c.chat_id, userId)) continue;
-    const link = await chatLink(c.chat_id);
+    const link = await chatLink(c.chat_id, c.invite_link);
     unmet.push({ chat_id: c.chat_id, ...link });
   }
   return unmet;
 }
+
 
 export function buildJoinKeyboard(
   unmet: { url: string; title: string }[],
