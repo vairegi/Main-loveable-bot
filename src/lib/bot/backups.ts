@@ -76,7 +76,6 @@ async function mirrorOne(
   const media = (post.media ?? {}) as { kind?: string; file_id?: string };
   const baseCaption = (post.caption ?? "") as string;
   const postExtra = await getSettingText(db, "post_caption_extra");
-  const fileExtra = await getSettingText(db, "file_caption_extra");
   const caption = appendExtra(baseCaption, postExtra);
 
   try {
