@@ -4,7 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomBytes } from "crypto";
-import { sendMessage, editMessageText } from "./telegram";
+import { sendMessage, editMessageText, tg } from "./telegram";
 import {
   deliverFileByCode,
   deletePostByCode,
@@ -839,10 +839,20 @@ register("fsublist", {
   handler: async ({ db }) => {
     const chs = await listForceSubChannels(db);
     if (!chs.length) return "No forced-subscription channels set. Use /fsub &lt;chat_id&gt; &lt;invite_link&gt; to add one.";
-    return [
-      "<b>🔒 Forced-subscription channels</b>",
-      ...chs.map((c) => `• <code>${c.chat_id}</code> ${c.title ?? ""}\n   ${c.invite_link ?? "(no link)"}`),
-    ].join("\n");
+    const lines = await Promise.all(chs.map(async (c) => {
+      let title = c.title;
+      if (!title) {
+        try {
+          const chat: any = await tg("getChat", { chat_id: c.chat_id });
+          title = chat?.title ?? null;
+        } catch { /* ignore */ }
+      }
+      const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const name = title ? esc(title) : "(unknown)";
+      const link = c.invite_link ? esc(c.invite_link) : "(no link)";
+      return `• <b>${name}</b>\n   <code>${c.chat_id}</code>\n   ${link}`;
+    }));
+    return ["<b>🔒 Forced-subscription channels</b>", ...lines].join("\n");
   },
 });
 
