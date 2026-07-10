@@ -4,7 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomBytes } from "crypto";
-import { sendMessage, editMessageText } from "./telegram";
+import { sendMessage, editMessageText, tg } from "./telegram";
 import {
   deliverFileByCode,
   deletePostByCode,
