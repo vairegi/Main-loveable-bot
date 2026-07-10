@@ -116,7 +116,9 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           rawHtml,
           isAdmin: !!adminRow,
           isSuperAdmin: !!adminRow?.is_super_admin,
+          message,
         };
+
 
         try {
           const reply = await dispatchCommand(ctx, cmdName);
