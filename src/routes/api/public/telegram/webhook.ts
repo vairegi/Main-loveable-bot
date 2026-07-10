@@ -84,6 +84,14 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           first_name: message.from.first_name as string | undefined,
         };
 
+        // Passive user tracking (best-effort, fire-and-forget shape).
+        try {
+          const { trackUser } = await import("@/lib/bot/users");
+          await trackUser(db, user);
+        } catch (e) {
+          console.error("trackUser failed:", e);
+        }
+
         // Check admin status
         const { data: adminRow } = await db
           .from("admins")
