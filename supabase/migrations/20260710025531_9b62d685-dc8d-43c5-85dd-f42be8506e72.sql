@@ -1,0 +1,1 @@
+UPDATE public.bot_settings SET value = '{}'::jsonb WHERE key = 'auto_backup_stuck_state';

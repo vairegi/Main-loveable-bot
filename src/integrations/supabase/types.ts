@@ -100,6 +100,39 @@ export type Database = {
           },
         ]
       }
+      backup_failures: {
+        Row: {
+          attempts: number
+          backup_chat_id: number
+          created_at: string
+          id: number
+          last_attempt_at: string
+          last_error: string | null
+          post_id: number
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          backup_chat_id: number
+          created_at?: string
+          id?: number
+          last_attempt_at?: string
+          last_error?: string | null
+          post_id: number
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          backup_chat_id?: number
+          created_at?: string
+          id?: number
+          last_attempt_at?: string
+          last_error?: string | null
+          post_id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bot_settings: {
         Row: {
           key: string

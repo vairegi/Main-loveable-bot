@@ -143,15 +143,16 @@ export async function backupAllToChannel(
   backupChatId: number,
   limit?: number,
   onProgress?: (p: {
-    processed: number;   // attempts done this call
-    mirrored: number;    // ok this call
-    failed: number;      // failed this call
-    totalToDo: number;   // total un-mirrored at start of this call
-    totalAll: number;    // total posts in db
-    doneAll: number;     // already mirrored (before + during this call)
+    processed: number;
+    mirrored: number;
+    failed: number;
+    totalToDo: number;
+    totalAll: number;
+    doneAll: number;
   }) => Promise<void> | void,
   delayMs = 300,
-): Promise<BackupResult & { totalAll: number; totalToDo: number; doneAll: number }> {
+  maxFailedAttempts = 3,
+): Promise<BackupResult & { totalAll: number; totalToDo: number; doneAll: number; skippedIds: number[] }> {
   const { data: posts } = await db
     .from("posts")
     .select("id, source_chat_id, source_message_id, extra_files, media, caption")
@@ -159,12 +160,28 @@ export async function backupAllToChannel(
 
   const totalAll = posts?.length ?? 0;
   if (!posts?.length) {
-    return { mirrored: 0, skipped: 0, failed: 0, totalAll: 0, totalToDo: 0, doneAll: 0 };
+    return { mirrored: 0, skipped: 0, failed: 0, totalAll: 0, totalToDo: 0, doneAll: 0, skippedIds: [] };
   }
 
   const done = await alreadyMirroredSet(db, backupChatId);
   const alreadyDone = done.size;
-  const pending = posts.filter((p) => !done.has(Number(p.id)));
+
+  // Load failure counts and treat posts that have already exhausted attempts
+  // as "done" so they don't block the queue.
+  const { data: failRows } = await db
+    .from("backup_failures")
+    .select("post_id, attempts")
+    .eq("backup_chat_id", backupChatId);
+  const failMap = new Map<number, number>(
+    (failRows ?? []).map((r) => [Number(r.post_id), Number(r.attempts) ?? 0]),
+  );
+  const exhaustedIds = new Set<number>(
+    Array.from(failMap.entries()).filter(([, n]) => n >= maxFailedAttempts).map(([id]) => id),
+  );
+
+  const pending = posts.filter(
+    (p) => !done.has(Number(p.id)) && !exhaustedIds.has(Number(p.id)),
+  );
   const totalToDo = pending.length;
 
   let mirrored = 0;
@@ -172,15 +189,47 @@ export async function backupAllToChannel(
   let failed = 0;
   let firstError: string | undefined;
   let processed = 0;
+  const skippedIds: number[] = [];
 
   for (const p of pending) {
     if (typeof limit === "number" && processed >= limit) break;
     const r = await mirrorOne(db, p, backupChatId);
     processed++;
-    if (r.ok) mirrored++;
-    else {
+    if (r.ok) {
+      mirrored++;
+      // Clear any prior failure record on success.
+      if (failMap.has(Number(p.id))) {
+        await db.from("backup_failures").delete().eq("post_id", p.id).eq("backup_chat_id", backupChatId);
+      }
+    } else {
       failed++;
       if (!firstError) firstError = r.error;
+      const prev = failMap.get(Number(p.id)) ?? 0;
+      const attempts = prev + 1;
+      failMap.set(Number(p.id), attempts);
+      await db.from("backup_failures").upsert(
+        {
+          post_id: p.id,
+          backup_chat_id: backupChatId,
+          attempts,
+          last_error: r.error ?? "unknown",
+          last_attempt_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "post_id,backup_chat_id" },
+      );
+      if (attempts >= maxFailedAttempts) {
+        // Mark as processed in backup_copies so it's excluded from future pending sets.
+        skippedIds.push(Number(p.id));
+        await db.from("backup_copies").upsert(
+          {
+            post_id: p.id,
+            backup_chat_id: backupChatId,
+            backup_message_id: null,
+          },
+          { onConflict: "post_id,backup_chat_id" },
+        );
+      }
     }
     if (onProgress) {
       try {
@@ -197,11 +246,20 @@ export async function backupAllToChannel(
     if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
   }
 
-  // Anything already mirrored before this call counts as skipped for the summary.
   skipped = alreadyDone;
 
-  return { mirrored, skipped, failed, firstError, totalAll, totalToDo, doneAll: alreadyDone + mirrored };
+  return {
+    mirrored,
+    skipped,
+    failed,
+    firstError,
+    totalAll,
+    totalToDo,
+    doneAll: alreadyDone + mirrored + skippedIds.length,
+    skippedIds,
+  };
 }
+
 
 // Scan database for posts not yet mirrored to each backup channel,
 // forward the missing ones to that channel.
