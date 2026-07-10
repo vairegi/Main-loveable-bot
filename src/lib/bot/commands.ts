@@ -860,6 +860,152 @@ register("fsubremove", {
 });
 
 
+// ---------------- Stats / Broadcast / Moderation ----------------
+
+register("stats", {
+  help: "/stats — bot health: users, fetches, top files, backup lag, queue",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const [{ count: postCount }, { count: userCount }, { count: queueSize }, { count: bannedCount }] = await Promise.all([
+      db.from("posts").select("*", { count: "exact", head: true }),
+      db.from("bot_users").select("*", { count: "exact", head: true }),
+      db.from("posts").select("*", { count: "exact", head: true }).is("posted_at", null),
+      db.from("bot_users").select("*", { count: "exact", head: true }).eq("banned", true),
+    ]);
+
+    const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
+    const { count: activeDay } = await db
+      .from("bot_users")
+      .select("*", { count: "exact", head: true })
+      .gte("last_seen", dayAgo);
+
+    const { data: topFiles } = await db
+      .from("posts")
+      .select("code, caption, fetch_count")
+      .order("fetch_count", { ascending: false })
+      .limit(10);
+
+    const { data: backupChannels } = await db.from("channels").select("telegram_chat_id, title").eq("role", "backup");
+    const backupLines: string[] = [];
+    if (backupChannels?.length && postCount) {
+      for (const ch of backupChannels) {
+        const { count: mirrored } = await db
+          .from("backup_copies")
+          .select("*", { count: "exact", head: true })
+          .eq("backup_chat_id", ch.telegram_chat_id);
+        const lag = (postCount ?? 0) - (mirrored ?? 0);
+        backupLines.push(`• <code>${ch.telegram_chat_id}</code> — ${mirrored ?? 0}/${postCount} (${lag} behind)`);
+      }
+    }
+
+    const { count: autodeleteQueue } = await db.from("pending_deletions").select("*", { count: "exact", head: true });
+
+    const topLines = (topFiles ?? [])
+      .filter((p) => (p.fetch_count ?? 0) > 0)
+      .slice(0, 10)
+      .map((p, i) => `${i + 1}. <code>${p.code}</code> — ${p.fetch_count}× — ${(p.caption ?? "").slice(0, 30) || "(no caption)"}`);
+
+    return [
+      "<b>📊 Bot stats</b>",
+      "",
+      `Posts: <b>${postCount ?? 0}</b> (queue: ${queueSize ?? 0})`,
+      `Users: <b>${userCount ?? 0}</b> total, ${activeDay ?? 0} active last 24h, ${bannedCount ?? 0} banned`,
+      `Autodelete queue: <b>${autodeleteQueue ?? 0}</b> pending`,
+      "",
+      "<b>💾 Backup lag</b>",
+      backupLines.length ? backupLines.join("\n") : "(no backup channels)",
+      "",
+      "<b>🔥 Top files</b>",
+      topLines.length ? topLines.join("\n") : "(no fetches yet)",
+    ].join("\n");
+  },
+});
+
+register("broadcast", {
+  help: "/broadcast &lt;text&gt; — send a message to every user who's ever used the bot (formatting supported)",
+  adminOnly: true,
+  handler: async ({ db, user, rawHtml }) => {
+    const text = rawHtml.replace(/^\/broadcast(@\S+)?\s*/i, "").trim();
+    if (!text) return "Usage: /broadcast &lt;message&gt;\nSupports bold, italic, quote, spoiler…";
+
+    const { data: users } = await db
+      .from("bot_users")
+      .select("telegram_user_id")
+      .eq("banned", false);
+    if (!users?.length) return "ℹ️ No users to broadcast to yet.";
+
+    let ok = 0;
+    let failed = 0;
+    // Sequential with tiny delay — Telegram's global cap is ~30 msg/s.
+    for (const u of users) {
+      try {
+        await sendMessage(u.telegram_user_id, text);
+        ok++;
+      } catch {
+        failed++;
+      }
+      // ~25 msg/s to stay under limit
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    await logAction(db, user, "broadcast", { total: users.length, ok, failed });
+    return `📢 Broadcast complete — delivered <b>${ok}</b>, failed <b>${failed}</b>.`;
+  },
+});
+
+register("ban", {
+  help: "/ban &lt;user_id&gt; [reason] — block a user from fetching files",
+  adminOnly: true,
+  handler: async ({ db, user, args, rawText }) => {
+    const target = Number(args[0]);
+    if (!target) return "Usage: /ban &lt;telegram_user_id&gt; [reason]";
+    const reason = rawText.replace(/^\/ban(@\S+)?\s+\S+\s*/i, "").trim() || null;
+    const { banUser } = await import("./users");
+    const r = await banUser(db, target, reason);
+    if (r.error) return `❌ ${r.error}`;
+    await logAction(db, user, "ban_user", { target, reason });
+    return `🚫 Banned <code>${target}</code>${reason ? ` — ${reason}` : ""}.`;
+  },
+});
+
+register("unban", {
+  help: "/unban &lt;user_id&gt; — remove ban",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const target = Number(args[0]);
+    if (!target) return "Usage: /unban &lt;telegram_user_id&gt;";
+    const { unbanUser } = await import("./users");
+    const r = await unbanUser(db, target);
+    if (r.error) return `❌ ${r.error}`;
+    await logAction(db, user, "unban_user", { target });
+    return `✅ Unbanned <code>${target}</code>.`;
+  },
+});
+
+register("banlist", {
+  help: "/banlist — show banned users",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { data } = await db
+      .from("bot_users")
+      .select("telegram_user_id, username, first_name, banned_reason, banned_at")
+      .eq("banned", true)
+      .order("banned_at", { ascending: false })
+      .limit(100);
+    if (!data?.length) return "No banned users.";
+    return [
+      "<b>🚫 Banned users</b>",
+      ...data.map(
+        (u) =>
+          `• <code>${u.telegram_user_id}</code> ${u.username ? "@" + u.username : (u.first_name ?? "")}${u.banned_reason ? ` — ${u.banned_reason}` : ""}`,
+      ),
+    ].join("\n");
+  },
+});
+
+
+
+
+
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
   const def = commands.get(commandName.toLowerCase());
   if (!def) return null;
