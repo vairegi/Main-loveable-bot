@@ -13,14 +13,29 @@ export interface FsubChannel {
 export async function listForceSubChannels(db: SupabaseClient): Promise<FsubChannel[]> {
   const { data } = await db
     .from("channels")
-    .select("telegram_chat_id, title")
+    .select("telegram_chat_id, title, invite_link")
     .eq("role", "forcesub");
-  return (data ?? []).map((c) => ({ chat_id: Number(c.telegram_chat_id), title: c.title }));
+  return (data ?? []).map((c) => ({
+    chat_id: Number(c.telegram_chat_id),
+    title: c.title,
+    invite_link: c.invite_link,
+  }));
 }
 
-export async function addForceSubChannel(db: SupabaseClient, chatId: number, addedBy: number) {
-  return db.from("channels").upsert({ telegram_chat_id: chatId, role: "forcesub", added_by: addedBy });
+export async function addForceSubChannel(
+  db: SupabaseClient,
+  chatId: number,
+  addedBy: number,
+  inviteLink?: string | null,
+) {
+  return db.from("channels").upsert({
+    telegram_chat_id: chatId,
+    role: "forcesub",
+    added_by: addedBy,
+    invite_link: inviteLink ?? null,
+  });
 }
+
 
 export async function removeForceSubChannel(db: SupabaseClient, chatId: number) {
   return db.from("channels").delete().eq("telegram_chat_id", chatId).eq("role", "forcesub");
