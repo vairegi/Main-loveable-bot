@@ -13,6 +13,9 @@ async function getSettingText(db: SupabaseClient, key: string): Promise<string> 
 function appendExtra(base: string, extra: string): string {
   if (!extra) return base;
   if (!base) return extra;
+  // Skip if base already contains this exact extra text (avoid duplicates
+  // when a post's stored caption was captured with the extra already inline).
+  if (base.includes(extra.trim())) return base;
   return `${base}\n\n${extra}`;
 }
 
