@@ -1108,8 +1108,7 @@ register("broadcast", {
   },
 });
 
-  },
-});
+
 
 
 register("ban", {
