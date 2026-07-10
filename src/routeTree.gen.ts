@@ -17,6 +17,7 @@ import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicTelegramImportRouteImport } from './routes/api/public/telegram/import'
 import { Route as ApiPublicHooksDripRouteImport } from './routes/api/public/hooks/drip'
+import { Route as ApiPublicHooksAutodeleteRouteImport } from './routes/api/public/hooks/autodelete'
 import { Route as ApiPublicHooksAutoBackupRouteImport } from './routes/api/public/hooks/auto-backup'
 
 const McpRoute = McpRouteImport.update({
@@ -63,6 +64,12 @@ const ApiPublicHooksDripRoute = ApiPublicHooksDripRouteImport.update({
   path: '/api/public/hooks/drip',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksAutodeleteRoute =
+  ApiPublicHooksAutodeleteRouteImport.update({
+    id: '/api/public/hooks/autodelete',
+    path: '/api/public/hooks/autodelete',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksAutoBackupRoute =
   ApiPublicHooksAutoBackupRouteImport.update({
     id: '/api/public/hooks/auto-backup',
@@ -77,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
+  '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
   '/api/public/telegram/import': typeof ApiPublicTelegramImportRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -88,6 +96,7 @@ export interface FileRoutesByTo {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
+  '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
   '/api/public/telegram/import': typeof ApiPublicTelegramImportRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -100,6 +109,7 @@ export interface FileRoutesById {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
+  '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
   '/api/public/telegram/import': typeof ApiPublicTelegramImportRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -113,6 +123,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/.mcp/invoke-tool/$tool'
     | '/api/public/hooks/auto-backup'
+    | '/api/public/hooks/autodelete'
     | '/api/public/hooks/drip'
     | '/api/public/telegram/import'
     | '/api/public/telegram/webhook'
@@ -124,6 +135,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/.mcp/invoke-tool/$tool'
     | '/api/public/hooks/auto-backup'
+    | '/api/public/hooks/autodelete'
     | '/api/public/hooks/drip'
     | '/api/public/telegram/import'
     | '/api/public/telegram/webhook'
@@ -135,6 +147,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/.mcp/invoke-tool/$tool'
     | '/api/public/hooks/auto-backup'
+    | '/api/public/hooks/autodelete'
     | '/api/public/hooks/drip'
     | '/api/public/telegram/import'
     | '/api/public/telegram/webhook'
@@ -147,6 +160,7 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
   ApiPublicHooksAutoBackupRoute: typeof ApiPublicHooksAutoBackupRoute
+  ApiPublicHooksAutodeleteRoute: typeof ApiPublicHooksAutodeleteRoute
   ApiPublicHooksDripRoute: typeof ApiPublicHooksDripRoute
   ApiPublicTelegramImportRoute: typeof ApiPublicTelegramImportRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
@@ -210,6 +224,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksDripRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/autodelete': {
+      id: '/api/public/hooks/autodelete'
+      path: '/api/public/hooks/autodelete'
+      fullPath: '/api/public/hooks/autodelete'
+      preLoaderRoute: typeof ApiPublicHooksAutodeleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/auto-backup': {
       id: '/api/public/hooks/auto-backup'
       path: '/api/public/hooks/auto-backup'
@@ -228,6 +249,7 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
   ApiPublicHooksAutoBackupRoute: ApiPublicHooksAutoBackupRoute,
+  ApiPublicHooksAutodeleteRoute: ApiPublicHooksAutodeleteRoute,
   ApiPublicHooksDripRoute: ApiPublicHooksDripRoute,
   ApiPublicTelegramImportRoute: ApiPublicTelegramImportRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
