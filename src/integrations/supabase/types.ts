@@ -175,6 +175,48 @@ export type Database = {
         }
         Relationships: []
       }
+      fsub_satisfied: {
+        Row: {
+          channel_chat_id: number
+          satisfied_at: string
+          user_id: number
+        }
+        Insert: {
+          channel_chat_id: number
+          satisfied_at?: string
+          user_id: number
+        }
+        Update: {
+          channel_chat_id?: number
+          satisfied_at?: string
+          user_id?: number
+        }
+        Relationships: []
+      }
+      pending_deletions: {
+        Row: {
+          chat_id: number
+          created_at: string
+          delete_at: string
+          id: number
+          message_id: number
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          delete_at: string
+          id?: number
+          message_id: number
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          delete_at?: string
+          id?: number
+          message_id?: number
+        }
+        Relationships: []
+      }
       post_copies: {
         Row: {
           created_at: string
