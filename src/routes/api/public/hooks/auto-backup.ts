@@ -113,16 +113,16 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
             const pending = Math.max(0, r.totalAll - r.doneAll);
             const pct = r.totalAll > 0 ? Math.floor((r.doneAll / r.totalAll) * 100) : 100;
 
-            const madeProgress = r.doneAll > entry.lastDoneAll;
+            // Auto-skipped posts (3 failed attempts) count as forward motion —
+            // they no longer block the queue.
+            const madeProgress = r.doneAll > entry.lastDoneAll || r.skippedIds.length > 0;
             if (madeProgress || pending === 0) {
-              // Reset streak on any forward motion or full completion.
               stuck[key] = {
                 lastDoneAll: r.doneAll,
                 lastProgressAt: nowIso,
                 attempts: 0,
               };
             } else if (pending > 0) {
-              // No progress and work remains — increment stuck streak.
               const attempts = entry.attempts + 1;
               const stuckSince = entry.stuckSince ?? nowIso;
               const backoffMin = BACKOFF_MIN[Math.min(attempts - 1, BACKOFF_MIN.length - 1)];
@@ -147,6 +147,15 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
                 );
               }
             }
+
+            if (r.skippedIds.length > 0) {
+              alerts.push(
+                `⏭ <b>Auto-skipped ${r.skippedIds.length} un-mirrorable post${r.skippedIds.length === 1 ? "" : "s"}</b>\n📦 ${label}\nposts: <code>${r.skippedIds.join(", ")}</code>${
+                  r.firstError ? `\nreason: <code>${r.firstError}</code>` : ""
+                }\n\n<i>These posts kept failing after 3 attempts (Telegram refused to copy/forward them, e.g. service messages or protected content). They're marked processed so backup can continue.</i>`,
+              );
+            }
+
 
             results.push({
               chatId: cid,
