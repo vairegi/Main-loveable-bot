@@ -37,7 +37,9 @@ export interface CmdCtx {
   rawHtml: string;
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  message?: any;
 }
+
 
 type Handler = (ctx: CmdCtx) => Promise<string | null>;
 
@@ -932,11 +934,19 @@ register("stats", {
 });
 
 register("broadcast", {
-  help: "/broadcast &lt;text&gt; — send a message to every user who's ever used the bot (formatting supported)",
+  help: "/broadcast &lt;text&gt; — send text to every user (formatting supported). Or reply to any message (including a forwarded channel post) with /broadcast to forward it to everyone, preserving the original channel tag.",
   adminOnly: true,
-  handler: async ({ db, user, rawHtml }) => {
+  handler: async ({ db, user, chatId, rawHtml, message }) => {
     const text = rawHtml.replace(/^\/broadcast(@\S+)?\s*/i, "").trim();
-    if (!text) return "Usage: /broadcast &lt;message&gt;\nSupports bold, italic, quote, spoiler…";
+    const reply = message?.reply_to_message;
+
+    if (!text && !reply) {
+      return [
+        "Usage:",
+        "• <code>/broadcast &lt;message&gt;</code> — send text (bold, italic, quote, spoiler…)",
+        "• Reply to any message with <code>/broadcast</code> — re-broadcasts it. If it's a forwarded channel post, the <b>Forwarded from</b> tag is preserved.",
+      ].join("\n");
+    }
 
     const { data: users } = await db
       .from("bot_users")
@@ -944,23 +954,30 @@ register("broadcast", {
       .eq("banned", false);
     if (!users?.length) return "ℹ️ No users to broadcast to yet.";
 
+    const { forwardMessage } = await import("./telegram");
+
     let ok = 0;
     let failed = 0;
-    // Sequential with tiny delay — Telegram's global cap is ~30 msg/s.
     for (const u of users) {
       try {
-        await sendMessage(u.telegram_user_id, text);
+        if (reply) {
+          // forwardMessage keeps the original "Forwarded from <channel>" header
+          // when the replied message was itself forwarded from a channel.
+          await forwardMessage(u.telegram_user_id, chatId, reply.message_id);
+        } else {
+          await sendMessage(u.telegram_user_id, text);
+        }
         ok++;
       } catch {
         failed++;
       }
-      // ~25 msg/s to stay under limit
       await new Promise((r) => setTimeout(r, 40));
     }
-    await logAction(db, user, "broadcast", { total: users.length, ok, failed });
+    await logAction(db, user, "broadcast", { total: users.length, ok, failed, mode: reply ? "forward" : "text" });
     return `📢 Broadcast complete — delivered <b>${ok}</b>, failed <b>${failed}</b>.`;
   },
 });
+
 
 register("ban", {
   help: "/ban &lt;user_id&gt; [reason] — block a user from fetching files",
