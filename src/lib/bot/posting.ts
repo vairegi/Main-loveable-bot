@@ -293,6 +293,19 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
 
 // -------- Deliver file to a user who clicked the deep-link --------
 export async function deliverFileByCode(db: SupabaseClient, userChatId: number, code: string): Promise<string> {
+  // Ban + rate-limit gate.
+  const { getBotUser, checkAndBumpRate } = await import("./users");
+  const bu = await getBotUser(db, userChatId);
+  if (bu?.banned) {
+    try { await sendMessage(userChatId, `🚫 You are banned from using this bot.${bu.banned_reason ? `\nReason: ${bu.banned_reason}` : ""}`); } catch { /* ignore */ }
+    return "";
+  }
+  const rate = await checkAndBumpRate(db, userChatId);
+  if (!rate.ok) {
+    try { await sendMessage(userChatId, `⏳ Slow down — you're requesting files too fast. Try again in ${rate.retryAfterSeconds ?? 60}s.`); } catch { /* ignore */ }
+    return "";
+  }
+
   const { data: post } = await db.from("posts").select("*").eq("code", code).maybeSingle();
   if (!post) return "❌ Sorry, that file is no longer available.";
 
@@ -364,6 +377,13 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
       } catch { /* ignore */ }
       await queueDeletion(db, userChatId, sentIds, autodeleteSeconds);
     }
+
+    // Bookkeeping: bump per-post + per-user fetch counters (best-effort).
+    try {
+      await db.from("posts").update({ fetch_count: (post.fetch_count ?? 0) + 1 }).eq("id", post.id);
+      const { data: cur } = await db.from("bot_users").select("fetch_count").eq("telegram_user_id", userChatId).maybeSingle();
+      await db.from("bot_users").update({ fetch_count: (cur?.fetch_count ?? 0) + 1 }).eq("telegram_user_id", userChatId);
+    } catch { /* ignore */ }
 
     return "";
   } catch (e: any) {

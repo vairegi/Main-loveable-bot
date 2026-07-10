@@ -151,6 +151,48 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_users: {
+        Row: {
+          banned: boolean
+          banned_at: string | null
+          banned_reason: string | null
+          fetch_count: number
+          first_name: string | null
+          first_seen: string
+          last_seen: string
+          rate_window_count: number
+          rate_window_started_at: string | null
+          telegram_user_id: number
+          username: string | null
+        }
+        Insert: {
+          banned?: boolean
+          banned_at?: string | null
+          banned_reason?: string | null
+          fetch_count?: number
+          first_name?: string | null
+          first_seen?: string
+          last_seen?: string
+          rate_window_count?: number
+          rate_window_started_at?: string | null
+          telegram_user_id: number
+          username?: string | null
+        }
+        Update: {
+          banned?: boolean
+          banned_at?: string | null
+          banned_reason?: string | null
+          fetch_count?: number
+          first_name?: string | null
+          first_seen?: string
+          last_seen?: string
+          rate_window_count?: number
+          rate_window_started_at?: string | null
+          telegram_user_id?: number
+          username?: string | null
+        }
+        Relationships: []
+      }
       channels: {
         Row: {
           added_by: number | null
@@ -259,6 +301,7 @@ export type Database = {
           created_at: string
           created_by: number | null
           extra_files: Json
+          fetch_count: number
           id: number
           media: Json
           media_group_id: string | null
@@ -272,6 +315,7 @@ export type Database = {
           created_at?: string
           created_by?: number | null
           extra_files?: Json
+          fetch_count?: number
           id?: number
           media?: Json
           media_group_id?: string | null
@@ -285,6 +329,7 @@ export type Database = {
           created_at?: string
           created_by?: number | null
           extra_files?: Json
+          fetch_count?: number
           id?: number
           media?: Json
           media_group_id?: string | null
