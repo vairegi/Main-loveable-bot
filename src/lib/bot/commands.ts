@@ -94,15 +94,17 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-async function loadBroadcastTargets(db: SupabaseClient): Promise<{ users: { telegram_user_id: number }[]; error?: string }> {
-  const users: { telegram_user_id: number }[] = [];
+type BroadcastUser = { telegram_user_id: number; username: string | null; first_name: string | null };
+
+async function loadBroadcastTargets(db: SupabaseClient): Promise<{ users: BroadcastUser[]; error?: string }> {
+  const users: BroadcastUser[] = [];
   const seen = new Set<number>();
   const pageSize = 1000;
 
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await db
       .from("bot_users")
-      .select("telegram_user_id")
+      .select("telegram_user_id, username, first_name")
       .eq("banned", false)
       .order("telegram_user_id", { ascending: true })
       .range(from, from + pageSize - 1);
@@ -113,13 +115,23 @@ async function loadBroadcastTargets(db: SupabaseClient): Promise<{ users: { tele
       const id = Number(row.telegram_user_id);
       if (!Number.isFinite(id) || seen.has(id)) continue;
       seen.add(id);
-      users.push({ telegram_user_id: id });
+      users.push({
+        telegram_user_id: id,
+        username: (row as any).username ?? null,
+        first_name: (row as any).first_name ?? null,
+      });
     }
 
     if (!data || data.length < pageSize) break;
   }
 
   return { users };
+}
+
+function formatFailureLine(u: BroadcastUser, reason: string, blocked: boolean): string {
+  const name = u.username ? `@${escapeHtml(u.username)}` : (u.first_name ? escapeHtml(u.first_name) : "—");
+  const badge = blocked ? "🚫" : "⚠️";
+  return `${badge} <code>${u.telegram_user_id}</code> ${name} — ${escapeHtml(reason.slice(0, 200))}`;
 }
 
 // ---------------- Commands ----------------
