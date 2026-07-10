@@ -131,7 +131,7 @@ register("help", {
       { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost", "recentposts"] },
       { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "schedulestatus", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
       { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup"] },
-      { title: "🔒 Content controls", cmds: ["protect", "spoiler"] },
+      { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub"] },
     ];
 
     const lines: string[] = ["<b>📖 Available commands</b>"];
