@@ -9,6 +9,7 @@ import {
   deliverFileByCode,
   deletePostByCode,
   repostByCode,
+  postByLink,
   getSchedule,
   saveSchedule,
   queueSize,
