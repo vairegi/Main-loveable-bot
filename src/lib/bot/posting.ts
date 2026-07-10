@@ -299,7 +299,12 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
   const sourceChatId = post.source_chat_id ? chatId(post.source_chat_id) : undefined;
   const sourceMessageId = numericMessageId(post.source_message_id);
   const media = mediaWithSource((post.media ?? {}) as TgMedia, sourceMessageId);
-  const caption = appendExtra(post.caption ?? "", await getExtraCaption(db, "file_caption_extra"));
+  // The "cover" delivered to the user IS a post (photo/video + caption), so it
+  // receives /postcaption. Extra attachments (PDFs, docs, etc.) receive
+  // /filecaption. Keep these strictly separate.
+  const postExtra = await getExtraCaption(db, "post_caption_extra");
+  const fileExtra = await getExtraCaption(db, "file_caption_extra");
+  const caption = appendExtra(post.caption ?? "", postExtra);
   const extras = Array.isArray(post.extra_files) ? (post.extra_files as TgMedia[]) : [];
   const opts = await getPostingOptions(db);
   const protectExtra = opts.protect ? { protect_content: true } : {};
@@ -315,17 +320,18 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
       await copyMessage(userChatId, sourceChatId, media.source_message_id, { caption, ...protectExtra });
     } else if (caption) await sendMessage(userChatId, caption, { ...protectExtra });
 
-    // Extra files (PDFs etc.)
+    // Extra files (PDFs etc.) — apply /filecaption
+    const fOpt = fileExtra ? { caption: fileExtra } : {};
     for (const [index, f] of extras.entries()) {
       const extraSourceMessageId = f.source_message_id ?? (sourceMessageId ? sourceMessageId + index + 1 : undefined);
       if (f.file_id) {
-        if (f.kind === "document") await sendDocument(userChatId, f.file_id, { ...protectExtra });
-        else if (f.kind === "video") await sendVideo(userChatId, f.file_id, { ...protectExtra });
-        else if (f.kind === "audio") await sendAudio(userChatId, f.file_id, { ...protectExtra });
-        else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id, { ...protectExtra });
+        if (f.kind === "document") await sendDocument(userChatId, f.file_id, { ...protectExtra, ...fOpt });
+        else if (f.kind === "video") await sendVideo(userChatId, f.file_id, { ...protectExtra, ...fOpt });
+        else if (f.kind === "audio") await sendAudio(userChatId, f.file_id, { ...protectExtra, ...fOpt });
+        else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id, { ...protectExtra, ...fOpt });
       } else if (extraSourceMessageId && sourceChatId) {
         // Backfilled extras — copy from source channel
-        await copyMessage(userChatId, sourceChatId, extraSourceMessageId, { ...protectExtra });
+        await copyMessage(userChatId, sourceChatId, extraSourceMessageId, { ...protectExtra, ...fOpt });
       }
     }
 
