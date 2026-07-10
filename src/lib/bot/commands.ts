@@ -37,7 +37,9 @@ export interface CmdCtx {
   rawHtml: string;
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  message?: any;
 }
+
 
 type Handler = (ctx: CmdCtx) => Promise<string | null>;
 
