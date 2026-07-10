@@ -155,6 +155,7 @@ export type Database = {
         Row: {
           added_by: number | null
           created_at: string
+          invite_link: string | null
           role: string
           telegram_chat_id: number
           title: string | null
@@ -162,6 +163,7 @@ export type Database = {
         Insert: {
           added_by?: number | null
           created_at?: string
+          invite_link?: string | null
           role: string
           telegram_chat_id: number
           title?: string | null
@@ -169,6 +171,7 @@ export type Database = {
         Update: {
           added_by?: number | null
           created_at?: string
+          invite_link?: string | null
           role?: string
           telegram_chat_id?: number
           title?: string | null
