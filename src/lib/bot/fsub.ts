@@ -57,16 +57,14 @@ async function isMember(chatId: number, userId: number): Promise<boolean> {
   }
 }
 
+// Resolve title (using cached channels.title when present) and derive a join URL.
 async function chatLink(
+  db: SupabaseClient,
   chatId: number,
-  storedLink?: string | null,
+  storedLink: string | null | undefined,
+  cachedTitle: string | null | undefined,
 ): Promise<{ url: string; title: string }> {
-  let title = String(chatId);
-  try {
-    const chat: any = await tg("getChat", { chat_id: chatId });
-    title = chat?.title ?? String(chatId);
-  } catch { /* ignore */ }
-  // Admin-provided link wins — no auto-creation of invite links.
+  const title = await resolveTitle(db, chatId, cachedTitle);
   if (storedLink) return { url: storedLink, title };
   return { url: `https://t.me/c/${String(chatId).replace(/^-100/, "")}`, title };
 }
@@ -77,23 +75,26 @@ export async function unmetForceSubs(
   db: SupabaseClient,
   userId: number,
 ): Promise<{ chat_id: number; url: string; title: string }[]> {
-  const channels = await listForceSubChannels(db);
+  const [channels, satisfiedRes] = await Promise.all([
+    listForceSubChannels(db),
+    db.from("fsub_satisfied").select("channel_chat_id").eq("user_id", userId),
+  ]);
   if (!channels.length) return [];
 
-  const { data: satisfied } = await db
-    .from("fsub_satisfied")
-    .select("channel_chat_id")
-    .eq("user_id", userId);
-  const satSet = new Set((satisfied ?? []).map((r) => Number(r.channel_chat_id)));
+  const satSet = new Set((satisfiedRes.data ?? []).map((r) => Number(r.channel_chat_id)));
+  const pending = channels.filter((c) => !satSet.has(c.chat_id));
+  if (!pending.length) return [];
 
-  const unmet: { chat_id: number; url: string; title: string }[] = [];
-  for (const c of channels) {
-    if (satSet.has(c.chat_id)) continue;
-    if (await isMember(c.chat_id, userId)) continue;
-    const link = await chatLink(c.chat_id, c.invite_link);
-    unmet.push({ chat_id: c.chat_id, ...link });
-  }
-  return unmet;
+  // Parallel membership checks — biggest latency win when there are multiple fsub channels.
+  const memberships = await Promise.all(pending.map((c) => isMember(c.chat_id, userId)));
+  const stillUnmet = pending.filter((_, i) => !memberships[i]);
+  if (!stillUnmet.length) return [];
+
+  // Parallel link/title resolution (cached titles skip Telegram entirely).
+  const links = await Promise.all(
+    stillUnmet.map((c) => chatLink(db, c.chat_id, c.invite_link, c.title)),
+  );
+  return stillUnmet.map((c, i) => ({ chat_id: c.chat_id, ...links[i] }));
 }
 
 
