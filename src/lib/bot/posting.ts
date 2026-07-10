@@ -355,6 +355,57 @@ export async function repostByCode(db: SupabaseClient, code: string): Promise<st
   }
 }
 
+// Parse a t.me link like https://t.me/c/2298797194/2135 or
+// https://t.me/somechannel/2135 into { sourceChatId, messageId }.
+// Private channels (t.me/c/<id>/<msg>) need the -100 prefix on the numeric id.
+export function parseTelegramPostLink(link: string): { sourceChatId: number | string; messageId: number } | null {
+  const m = link.trim().match(/t\.me\/(c\/(-?\d+)|([A-Za-z0-9_]+))\/(\d+)/);
+  if (!m) return null;
+  const msgId = Number(m[4]);
+  if (!Number.isFinite(msgId)) return null;
+  if (m[2]) {
+    const raw = m[2].replace(/^-/, "");
+    const chatId = Number(`-100${raw}`);
+    return { sourceChatId: chatId, messageId: msgId };
+  }
+  return { sourceChatId: `@${m[3]}`, messageId: msgId };
+}
+
+// Manually publish a post by its source (database channel) link.
+export async function postByLink(db: SupabaseClient, link: string): Promise<string> {
+  const parsed = parseTelegramPostLink(link);
+  if (!parsed) return `❌ Not a valid Telegram post link: <code>${link}</code>`;
+
+  // Try direct match on source message id, then fall back to any attached extra file.
+  const { data: direct } = await db
+    .from("posts")
+    .select("*")
+    .eq("source_chat_id", parsed.sourceChatId)
+    .eq("source_message_id", parsed.messageId)
+    .maybeSingle();
+
+  let post = direct;
+  if (!post) {
+    // Maybe this link points to an attached file — find the parent post.
+    const { data: candidates } = await db
+      .from("posts")
+      .select("*")
+      .eq("source_chat_id", parsed.sourceChatId)
+      .contains("extra_files", [{ source_message_id: parsed.messageId }]);
+    post = candidates?.[0] ?? null;
+  }
+
+  if (!post) return `❌ No stored post found for <a href="${link}">${parsed.messageId}</a>. Run /scandatabase first if it's new.`;
+
+  try {
+    await publishPost(db, post);
+    await db.from("posts").update({ posted_at: new Date().toISOString() }).eq("id", post.id);
+    return `✅ Posted <code>${post.code}</code> (msg ${parsed.messageId}).`;
+  } catch (e: any) {
+    return `❌ Post failed for msg ${parsed.messageId}: ${e?.message ?? "unknown"}`;
+  }
+}
+
 export async function deletePostByCode(db: SupabaseClient, code: string): Promise<string> {
   const { data: post } = await db.from("posts").select("id").eq("code", code).maybeSingle();
   if (!post) return `❌ No post found with code <code>${code}</code>.`;

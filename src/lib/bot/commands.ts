@@ -9,6 +9,7 @@ import {
   deliverFileByCode,
   deletePostByCode,
   repostByCode,
+  postByLink,
   getSchedule,
   saveSchedule,
   queueSize,
@@ -125,7 +126,7 @@ register("help", {
       { title: "👤 General", cmds: ["start", "help", "whoami"] },
       { title: "🛡️ Admin management", cmds: ["addadmin", "removeadmin", "listadmins", "genimporttoken"] },
       { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
-      { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "deletepost", "recentposts"] },
+      { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost", "recentposts"] },
       { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "schedulestatus", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
       { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler"] },
@@ -377,6 +378,22 @@ register("repost", {
     return result;
   },
 });
+
+register("mpost", {
+  help: "/mpost &lt;link&gt; [link...] — manually post one or more database posts to main channels by t.me link",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const links = args.filter((a) => /t\.me\//i.test(a));
+    if (!links.length) return "Usage: /mpost &lt;https://t.me/c/&lt;chat&gt;/&lt;msg&gt;&gt; [more links...]";
+    const results: string[] = [];
+    for (const link of links) {
+      results.push(await postByLink(db, link));
+    }
+    await logAction(db, user, "mpost", { links, count: links.length });
+    return results.join("\n");
+  },
+});
+
 
 register("deletepost", {
   help: "/deletepost &lt;code&gt; — delete a post from all main channels",
