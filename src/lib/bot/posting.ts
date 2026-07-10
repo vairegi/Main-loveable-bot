@@ -378,14 +378,9 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
       await queueDeletion(db, userChatId, sentIds, autodeleteSeconds);
     }
 
-    // Bookkeeping: bump per-post and per-user counters (fire-and-forget).
+    // Bookkeeping: bump per-post + per-user fetch counters (best-effort).
     try {
-      await db.rpc as any;
       await db.from("posts").update({ fetch_count: (post.fetch_count ?? 0) + 1 }).eq("id", post.id);
-      await db.from("bot_users").update({ fetch_count: (bu?.rate_window_count !== undefined ? undefined : undefined) as any }).eq("telegram_user_id", userChatId);
-    } catch { /* ignore */ }
-    // Increment user's total fetch_count via a separate simple update.
-    try {
       const { data: cur } = await db.from("bot_users").select("fetch_count").eq("telegram_user_id", userChatId).maybeSingle();
       await db.from("bot_users").update({ fetch_count: (cur?.fetch_count ?? 0) + 1 }).eq("telegram_user_id", userChatId);
     } catch { /* ignore */ }
