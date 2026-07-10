@@ -93,12 +93,13 @@ async function mirrorOne(
       main = await copyOrForward(dest, from, Number(sourceMessageId), copyExtra);
     }
 
-    // Mirror extra files (docs, etc.) — best effort. Append file_caption_extra
-    // so backup files carry the same extra caption users receive.
+    // Mirror extra files (docs, etc.) — best effort. Backup channel is a
+    // "posting" surface, so extras carry post_caption_extra (not file_caption_extra,
+    // which is reserved for user-facing file delivery).
     const extras = Array.isArray(post.extra_files) ? post.extra_files : [];
     for (const [i, f] of extras.entries()) {
       const smid = f?.source_message_id ?? Number(sourceMessageId) + i + 1;
-      const fCaption = fileExtra;
+      const fCaption = postExtra;
       const fOpt: Record<string, unknown> = fCaption ? { caption: fCaption } : {};
       try {
         if (f?.kind === "photo" && f.file_id) {
