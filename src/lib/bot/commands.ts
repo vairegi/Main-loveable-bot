@@ -4,7 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomBytes } from "crypto";
-import { sendMessage, editMessageText, tg } from "./telegram";
+import { sendMessage, editMessageText, forwardMessage, tg } from "./telegram";
 import {
   deliverFileByCode,
   deletePostByCode,
@@ -84,6 +84,38 @@ async function logAction(db: SupabaseClient, user: TgUser, action: string, detai
   }
 
   return { error: null };
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function loadBroadcastTargets(db: SupabaseClient): Promise<{ users: { telegram_user_id: number }[]; error?: string }> {
+  const users: { telegram_user_id: number }[] = [];
+  const seen = new Set<number>();
+  const pageSize = 1000;
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await db
+      .from("bot_users")
+      .select("telegram_user_id")
+      .eq("banned", false)
+      .order("telegram_user_id", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) return { users, error: error.message };
+
+    for (const row of data ?? []) {
+      const id = Number(row.telegram_user_id);
+      if (!Number.isFinite(id) || seen.has(id)) continue;
+      seen.add(id);
+      users.push({ telegram_user_id: id });
+    }
+
+    if (!data || data.length < pageSize) break;
+  }
+
+  return { users };
 }
 
 // ---------------- Commands ----------------
