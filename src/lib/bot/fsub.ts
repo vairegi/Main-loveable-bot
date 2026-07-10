@@ -57,6 +57,30 @@ async function isMember(chatId: number, userId: number): Promise<boolean> {
   }
 }
 
+// Fetches (and caches) the channel title. Uses stored channels.title first
+// so repeat fsub checks avoid the getChat round-trip entirely.
+async function resolveTitle(
+  db: SupabaseClient,
+  chatId: number,
+  cached: string | null | undefined,
+): Promise<string> {
+  if (cached && cached.trim()) return cached;
+  try {
+    const chat: any = await tg("getChat", { chat_id: chatId });
+    const title = chat?.title ?? String(chatId);
+    if (chat?.title) {
+      db.from("channels")
+        .update({ title: chat.title })
+        .eq("telegram_chat_id", chatId)
+        .then(() => {}, () => {});
+    }
+    return title;
+  } catch {
+    return String(chatId);
+  }
+}
+
+
 // Resolve title (using cached channels.title when present) and derive a join URL.
 async function chatLink(
   db: SupabaseClient,
