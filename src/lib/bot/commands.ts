@@ -19,6 +19,8 @@ import {
   type Schedule,
 } from "./posting";
 import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeBackupChannel } from "./backups";
+import { getAutodeleteSeconds, setAutodeleteSeconds, parseDuration, formatDuration } from "./autodelete";
+import { listForceSubChannels, addForceSubChannel, removeForceSubChannel } from "./fsub";
 
 export interface TgUser {
   id: number;
