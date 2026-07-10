@@ -980,17 +980,17 @@ register("broadcast", {
       ].join("\n");
     }
 
-    const { data: users } = await db
-      .from("bot_users")
-      .select("telegram_user_id")
-      .eq("banned", false);
-    if (!users?.length) return "ℹ️ No users to broadcast to yet.";
-
-    const { forwardMessage } = await import("./telegram");
+    const { users, error: targetError } = await loadBroadcastTargets(db);
+    if (targetError) return `❌ I couldn't load broadcast users: ${targetError}`;
+    if (!users.length) return "ℹ️ No users to broadcast to yet.";
 
     let ok = 0;
     let failed = 0;
-    for (const u of users) {
+    const failedSamples: string[] = [];
+    const blockedUsers: number[] = [];
+
+    for (let i = 0; i < users.length; i++) {
+      const u = users[i];
       try {
         if (reply) {
           // forwardMessage keeps the original "Forwarded from <channel>" header
@@ -1000,13 +1000,48 @@ register("broadcast", {
           await sendMessage(u.telegram_user_id, text);
         }
         ok++;
-      } catch {
+      } catch (e: any) {
         failed++;
+        const err = String(e?.message ?? e ?? "unknown");
+        if (failedSamples.length < 3) failedSamples.push(`<code>${u.telegram_user_id}</code>: ${err.slice(0, 160)}`);
+
+        // Telegram returns 403 when a user blocked the bot or has not started it.
+        // Mark them banned so future broadcasts don't keep counting them as targets.
+        if (/\b403\b|bot was blocked|user is deactivated|chat not found|bot can't initiate/i.test(err)) {
+          blockedUsers.push(u.telegram_user_id);
+        }
       }
-      await new Promise((r) => setTimeout(r, 40));
+
+      // Telegram allows roughly 30 messages/sec globally. Keep a safe pace and
+      // avoid a long pause after the final send.
+      if (i < users.length - 1) await wait(40);
     }
-    await logAction(db, user, "broadcast", { total: users.length, ok, failed, mode: reply ? "forward" : "text" });
-    return `📢 Broadcast complete — delivered <b>${ok}</b>, failed <b>${failed}</b>.`;
+
+    if (blockedUsers.length) {
+      await db
+        .from("bot_users")
+        .update({
+          banned: true,
+          banned_reason: "Telegram delivery failed: blocked bot or chat unavailable",
+          banned_at: new Date().toISOString(),
+        })
+        .in("telegram_user_id", blockedUsers);
+    }
+
+    await logAction(db, user, "broadcast", {
+      total: users.length,
+      ok,
+      failed,
+      blocked: blockedUsers.length,
+      mode: reply ? "forward" : "text",
+      failedSamples,
+    });
+
+    const failedNote = failedSamples.length ? `\n\nFirst error:\n${failedSamples.join("\n")}` : "";
+    const blockedNote = blockedUsers.length
+      ? `\n\nRemoved <b>${blockedUsers.length}</b> blocked/unreachable user(s) from future broadcasts.`
+      : "";
+    return `📢 Broadcast complete — delivered <b>${ok}</b> / ${users.length}, failed <b>${failed}</b>.${blockedNote}${failedNote}`;
   },
 });
 
