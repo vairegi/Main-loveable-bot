@@ -1000,9 +1000,10 @@ register("broadcast", {
     if (targetError) return `❌ I couldn't load broadcast users: ${targetError}`;
     if (!users.length) return "ℹ️ No users to broadcast to yet.";
 
+    const startedAt = Date.now();
     let ok = 0;
     let failed = 0;
-    const failedSamples: string[] = [];
+    const failures: { user: BroadcastUser; reason: string; blocked: boolean }[] = [];
     const blockedUsers: number[] = [];
 
     for (let i = 0; i < users.length; i++) {
@@ -1019,13 +1020,9 @@ register("broadcast", {
       } catch (e: any) {
         failed++;
         const err = String(e?.message ?? e ?? "unknown");
-        if (failedSamples.length < 3) failedSamples.push(`<code>${u.telegram_user_id}</code>: ${escapeHtml(err.slice(0, 160))}`);
-
-        // Telegram returns 403 when a user blocked the bot or has not started it.
-        // Mark them banned so future broadcasts don't keep counting them as targets.
-        if (/\b403\b|bot was blocked|user is deactivated|chat not found|bot can't initiate/i.test(err)) {
-          blockedUsers.push(u.telegram_user_id);
-        }
+        const isBlocked = /\b403\b|bot was blocked|user is deactivated|chat not found|bot can't initiate/i.test(err);
+        failures.push({ user: u, reason: err, blocked: isBlocked });
+        if (isBlocked) blockedUsers.push(u.telegram_user_id);
       }
 
       // Telegram allows roughly 30 messages/sec globally. Keep a safe pace and
@@ -1044,20 +1041,73 @@ register("broadcast", {
         .in("telegram_user_id", blockedUsers);
     }
 
+    const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+    const successRate = users.length ? ((ok / users.length) * 100).toFixed(1) : "0.0";
+    const otherFailed = failures.length - blockedUsers.length;
+
     await logAction(db, user, "broadcast", {
       total: users.length,
       ok,
       failed,
       blocked: blockedUsers.length,
       mode: reply ? "forward" : "text",
-      failedSamples,
+      elapsedSec,
+      failedSamples: failures.slice(0, 5).map(f => `${f.user.telegram_user_id}: ${f.reason.slice(0, 160)}`),
     });
 
-    const failedNote = failedSamples.length ? `\n\nFirst error:\n${failedSamples.join("\n")}` : "";
-    const blockedNote = blockedUsers.length
-      ? `\n\nRemoved <b>${blockedUsers.length}</b> blocked/unreachable user(s) from future broadcasts.`
-      : "";
-    return `📢 Broadcast complete — delivered <b>${ok}</b> / ${users.length}, failed <b>${failed}</b>.${blockedNote}${failedNote}`;
+    // ---- Summary card ----
+    const summary = [
+      `📢 <b>Broadcast delivery report</b>`,
+      ``,
+      `📨 Mode: <b>${reply ? "Forward" : "Text"}</b>`,
+      `👥 Targeted: <b>${users.length}</b>`,
+      `✅ Delivered: <b>${ok}</b> (${successRate}%)`,
+      `❌ Failed: <b>${failed}</b>`,
+      `  • 🚫 Blocked / unreachable: <b>${blockedUsers.length}</b>`,
+      `  • ⚠️ Other errors: <b>${otherFailed}</b>`,
+      `⏱ Duration: <b>${elapsedSec}s</b>`,
+    ].join("\n");
+    await sendMessage(chatId, summary);
+
+    // ---- Detailed failure list (paginated) ----
+    if (failures.length) {
+      // Blocked first, then other errors — most useful ordering for admin.
+      const sorted = [...failures].sort((a, b) => Number(b.blocked) - Number(a.blocked));
+      const header = `📋 <b>Failed deliveries (${failures.length})</b>\n<i>🚫 = blocked / auto-removed · ⚠️ = other error</i>\n\n`;
+      const lines = sorted.map(f => formatFailureLine(f.user, f.reason, f.blocked));
+
+      const MAX = 3800; // stay well under Telegram's 4096 limit
+      let chunk = header;
+      let part = 1;
+      const totalParts = (() => {
+        let count = 1;
+        let size = header.length;
+        for (const line of lines) {
+          if (size + line.length + 1 > MAX) { count++; size = 0; }
+          size += line.length + 1;
+        }
+        return count;
+      })();
+
+      for (const line of lines) {
+        if (chunk.length + line.length + 1 > MAX) {
+          await sendMessage(chatId, `${chunk}\n\n<i>Part ${part}/${totalParts}</i>`);
+          await wait(50);
+          part++;
+          chunk = "";
+        }
+        chunk += (chunk ? "\n" : "") + line;
+      }
+      if (chunk) {
+        await sendMessage(chatId, totalParts > 1 ? `${chunk}\n\n<i>Part ${part}/${totalParts}</i>` : chunk);
+      }
+    }
+
+    // Suppress the automatic reply — we already sent the detailed report.
+    return null;
+  },
+});
+
   },
 });
 
