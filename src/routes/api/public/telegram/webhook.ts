@@ -32,6 +32,18 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           }
         }
 
+        // Handle join requests for forced-subscription channels (approval-required invite links).
+        const joinReq = update.chat_join_request;
+        if (joinReq?.chat?.id && joinReq?.from?.id) {
+          try {
+            const { markJoinRequested } = await import("@/lib/bot/fsub");
+            await markJoinRequested(db, Number(joinReq.from.id), Number(joinReq.chat.id));
+          } catch (e) {
+            console.error("markJoinRequested failed:", e);
+          }
+          return Response.json({ ok: true, join_request: true });
+        }
+
         // Handle new posts from database channels
         const channelPost = update.channel_post;
         if (channelPost?.chat?.id) {

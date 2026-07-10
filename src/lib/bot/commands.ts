@@ -19,6 +19,8 @@ import {
   type Schedule,
 } from "./posting";
 import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeBackupChannel } from "./backups";
+import { getAutodeleteSeconds, setAutodeleteSeconds, parseDuration, formatDuration } from "./autodelete";
+import { listForceSubChannels, addForceSubChannel, removeForceSubChannel } from "./fsub";
 
 export interface TgUser {
   id: number;
@@ -129,7 +131,7 @@ register("help", {
       { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost", "recentposts"] },
       { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "schedulestatus", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
       { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup"] },
-      { title: "🔒 Content controls", cmds: ["protect", "spoiler"] },
+      { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub"] },
     ];
 
     const lines: string[] = ["<b>📖 Available commands</b>"];
@@ -787,6 +789,59 @@ register("resetbackup", {
     await logAction(db, user, "reset_backup_tracking", { chatId: cid ?? null, cleared: r.cleared });
     const scope = cid ? `<code>${cid}</code>` : "<b>all backup channels</b>";
     return `♻️ Reset mirror log for ${scope} — cleared <b>${r.cleared}</b> row(s).\nRun /backup ${cid ?? "&lt;chat_id&gt;"} to mirror everything again from post 1.`;
+  },
+});
+
+register("autodelete", {
+  help: "/autodelete &lt;duration&gt; — auto-delete files sent to users after Xh/Xm/Xd (e.g. 12h, 30m, 2d). Use /autodelete off to disable.",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    if (!args[0]) {
+      const cur = await getAutodeleteSeconds(db);
+      return cur > 0
+        ? `⏳ Auto-delete is <b>${formatDuration(cur)}</b>.\nUse /autodelete off to disable, or /autodelete 12h to change.`
+        : "⏹️ Auto-delete is <b>off</b>.\nUse /autodelete 12h (or 30m, 2d) to enable.";
+    }
+    const secs = parseDuration(args[0]);
+    if (secs === null) return "Usage: /autodelete &lt;Xh|Xm|Xd&gt; or /autodelete off";
+    await setAutodeleteSeconds(db, secs);
+    await logAction(db, user, "set_autodelete", { seconds: secs });
+    return secs > 0
+      ? `✅ Auto-delete set to <b>${formatDuration(secs)}</b>. Files delivered to users will be removed after that.`
+      : "✅ Auto-delete disabled.";
+  },
+});
+
+register("fsub", {
+  help:
+    "/fsub &lt;chat_id&gt; — require users to join this channel before Get File works\n" +
+    "/fsub list — show forced channels\n" +
+    "/fsub remove &lt;chat_id&gt; — stop requiring that channel",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const sub = args[0]?.toLowerCase();
+    if (!sub) {
+      return "Usage:\n/fsub &lt;chat_id&gt; — add\n/fsub list\n/fsub remove &lt;chat_id&gt;\n\nThe bot must be an admin in each forced channel. For approval-required invite links, users get in as soon as they tap Request to Join — you can approve later.";
+    }
+    if (sub === "list") {
+      const chs = await listForceSubChannels(db);
+      if (!chs.length) return "No forced-subscription channels set. Use /fsub &lt;chat_id&gt; to add one.";
+      return ["<b>🔒 Forced-subscription channels</b>", ...chs.map((c) => `• <code>${c.chat_id}</code> ${c.title ?? ""}`)].join("\n");
+    }
+    if (sub === "remove") {
+      const cid = Number(args[1]);
+      if (!cid) return "Usage: /fsub remove &lt;chat_id&gt;";
+      const { error } = await removeForceSubChannel(db, cid);
+      if (error) return `❌ ${error.message}`;
+      await logAction(db, user, "fsub_remove", { chatId: cid });
+      return `✅ Removed forced channel <code>${cid}</code>.`;
+    }
+    const cid = Number(args[0]);
+    if (!cid) return "Usage: /fsub &lt;chat_id&gt; (the bot must be admin there)";
+    const { error } = await addForceSubChannel(db, cid, user.id);
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "fsub_add", { chatId: cid });
+    return `✅ Users must now join <code>${cid}</code> to receive files.\nMake sure the bot is an admin (with invite rights) in that channel. For approval-required links, the bot marks users as satisfied as soon as they Request to Join.`;
   },
 });
 

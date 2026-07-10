@@ -296,12 +296,27 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
   const { data: post } = await db.from("posts").select("*").eq("code", code).maybeSingle();
   if (!post) return "❌ Sorry, that file is no longer available.";
 
+  // Force-subscribe gate: if any forcesub channels are configured, require the
+  // user to be a member (or to have already sent a chat_join_request).
+  const { unmetForceSubs, buildJoinKeyboard } = await import("./fsub");
+  const unmet = await unmetForceSubs(db, userChatId);
+  if (unmet.length) {
+    const botUsername = await getBotUsername();
+    const keyboard = buildJoinKeyboard(unmet, `get_${code}`, botUsername);
+    const names = unmet.map((c) => `• <b>${c.title}</b>`).join("\n");
+    try {
+      await sendMessage(
+        userChatId,
+        `🔒 <b>Please join our channel(s) to get the file:</b>\n\n${names}\n\nAfter joining (or sending the join request), tap <b>I've Joined — Try Again</b>.`,
+        { reply_markup: keyboard },
+      );
+    } catch { /* ignore */ }
+    return "";
+  }
+
   const sourceChatId = post.source_chat_id ? chatId(post.source_chat_id) : undefined;
   const sourceMessageId = numericMessageId(post.source_message_id);
   const media = mediaWithSource((post.media ?? {}) as TgMedia, sourceMessageId);
-  // The "cover" delivered to the user IS a post (photo/video + caption), so it
-  // receives /postcaption. Extra attachments (PDFs, docs, etc.) receive
-  // /filecaption. Keep these strictly separate.
   const postExtra = await getExtraCaption(db, "post_caption_extra");
   const fileExtra = await getExtraCaption(db, "file_caption_extra");
   const caption = appendExtra(post.caption ?? "", postExtra);
@@ -310,29 +325,44 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
   const protectExtra = opts.protect ? { protect_content: true } : {};
   const spoilerPhoto = opts.spoiler ? { has_spoiler: true } : {};
 
+  const { getAutodeleteSeconds, queueDeletion, formatDuration } = await import("./autodelete");
+  const autodeleteSeconds = await getAutodeleteSeconds(db);
+  const sentIds: number[] = [];
+  const track = (m: any) => { if (m?.message_id) sentIds.push(m.message_id); };
+
   try {
     // Cover — prefer file_id, fall back to copyMessage from source channel
-    if (media.kind === "photo" && media.file_id) await sendPhoto(userChatId, media.file_id, { caption, ...protectExtra, ...spoilerPhoto });
-    else if (media.kind === "video" && media.file_id) await sendVideo(userChatId, media.file_id, { caption, ...protectExtra, ...spoilerPhoto });
-    else if (media.kind === "document" && media.file_id) await sendDocument(userChatId, media.file_id, { caption, ...protectExtra });
-    else if (media.kind === "audio" && media.file_id) await sendAudio(userChatId, media.file_id, { caption, ...protectExtra });
+    if (media.kind === "photo" && media.file_id) track(await sendPhoto(userChatId, media.file_id, { caption, ...protectExtra, ...spoilerPhoto }));
+    else if (media.kind === "video" && media.file_id) track(await sendVideo(userChatId, media.file_id, { caption, ...protectExtra, ...spoilerPhoto }));
+    else if (media.kind === "document" && media.file_id) track(await sendDocument(userChatId, media.file_id, { caption, ...protectExtra }));
+    else if (media.kind === "audio" && media.file_id) track(await sendAudio(userChatId, media.file_id, { caption, ...protectExtra }));
     else if (media.kind !== "text" && sourceChatId && media.source_message_id) {
-      await copyMessage(userChatId, sourceChatId, media.source_message_id, { caption, ...protectExtra });
-    } else if (caption) await sendMessage(userChatId, caption, { ...protectExtra });
+      track(await copyMessage(userChatId, sourceChatId, media.source_message_id, { caption, ...protectExtra }));
+    } else if (caption) track(await sendMessage(userChatId, caption, { ...protectExtra }));
 
     // Extra files (PDFs etc.) — apply /filecaption
     const fOpt = fileExtra ? { caption: fileExtra } : {};
     for (const [index, f] of extras.entries()) {
       const extraSourceMessageId = f.source_message_id ?? (sourceMessageId ? sourceMessageId + index + 1 : undefined);
       if (f.file_id) {
-        if (f.kind === "document") await sendDocument(userChatId, f.file_id, { ...protectExtra, ...fOpt });
-        else if (f.kind === "video") await sendVideo(userChatId, f.file_id, { ...protectExtra, ...fOpt });
-        else if (f.kind === "audio") await sendAudio(userChatId, f.file_id, { ...protectExtra, ...fOpt });
-        else if (f.kind === "photo") await sendPhoto(userChatId, f.file_id, { ...protectExtra, ...fOpt });
+        if (f.kind === "document") track(await sendDocument(userChatId, f.file_id, { ...protectExtra, ...fOpt }));
+        else if (f.kind === "video") track(await sendVideo(userChatId, f.file_id, { ...protectExtra, ...fOpt }));
+        else if (f.kind === "audio") track(await sendAudio(userChatId, f.file_id, { ...protectExtra, ...fOpt }));
+        else if (f.kind === "photo") track(await sendPhoto(userChatId, f.file_id, { ...protectExtra, ...fOpt }));
       } else if (extraSourceMessageId && sourceChatId) {
-        // Backfilled extras — copy from source channel
-        await copyMessage(userChatId, sourceChatId, extraSourceMessageId, { ...protectExtra, ...fOpt });
+        track(await copyMessage(userChatId, sourceChatId, extraSourceMessageId, { ...protectExtra, ...fOpt }));
       }
+    }
+
+    if (autodeleteSeconds > 0 && sentIds.length) {
+      try {
+        const warn = await sendMessage(
+          userChatId,
+          `⏳ These files will be auto-deleted in <b>${formatDuration(autodeleteSeconds)}</b>. Save what you need.`,
+        );
+        if (warn?.message_id) sentIds.push(warn.message_id);
+      } catch { /* ignore */ }
+      await queueDeletion(db, userChatId, sentIds, autodeleteSeconds);
     }
 
     return "";
