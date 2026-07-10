@@ -293,6 +293,19 @@ async function publishPost(db: SupabaseClient, post: any): Promise<void> {
 
 // -------- Deliver file to a user who clicked the deep-link --------
 export async function deliverFileByCode(db: SupabaseClient, userChatId: number, code: string): Promise<string> {
+  // Ban + rate-limit gate.
+  const { getBotUser, checkAndBumpRate } = await import("./users");
+  const bu = await getBotUser(db, userChatId);
+  if (bu?.banned) {
+    try { await sendMessage(userChatId, `🚫 You are banned from using this bot.${bu.banned_reason ? `\nReason: ${bu.banned_reason}` : ""}`); } catch { /* ignore */ }
+    return "";
+  }
+  const rate = await checkAndBumpRate(db, userChatId);
+  if (!rate.ok) {
+    try { await sendMessage(userChatId, `⏳ Slow down — you're requesting files too fast. Try again in ${rate.retryAfterSeconds ?? 60}s.`); } catch { /* ignore */ }
+    return "";
+  }
+
   const { data: post } = await db.from("posts").select("*").eq("code", code).maybeSingle();
   if (!post) return "❌ Sorry, that file is no longer available.";
 
