@@ -51,6 +51,30 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
           .select("telegram_chat_id, title")
           .eq("role", "backup");
 
+        // Idle short-circuit: if every backup channel is fully caught up,
+        // skip the whole tick — no admin DMs, no bookkeeping. The cron
+        // effectively sleeps until /backup, /addbackup, or /scandatabase
+        // creates new pending work.
+        {
+          const { count: totalPosts } = await db
+            .from("posts")
+            .select("id", { count: "exact", head: true });
+          const total = Number(totalPosts ?? 0);
+          let anyPending = false;
+          for (const c of channels ?? []) {
+            const cid = Number(c.telegram_chat_id);
+            if (!Number.isFinite(cid)) continue;
+            const { count: done } = await db
+              .from("backup_copies")
+              .select("post_id", { count: "exact", head: true })
+              .eq("backup_chat_id", cid);
+            if (Number(done ?? 0) < total) { anyPending = true; break; }
+          }
+          if (!anyPending) {
+            return Response.json({ ok: true, idle: true, totalPosts: total });
+          }
+        }
+
         // Load stuck-tracking state.
         const { data: stuckRow } = await db
           .from("bot_settings")
