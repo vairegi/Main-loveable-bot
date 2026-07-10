@@ -13,6 +13,9 @@ async function getSettingText(db: SupabaseClient, key: string): Promise<string> 
 function appendExtra(base: string, extra: string): string {
   if (!extra) return base;
   if (!base) return extra;
+  // Skip if base already contains this exact extra text (avoid duplicates
+  // when a post's stored caption was captured with the extra already inline).
+  if (base.includes(extra.trim())) return base;
   return `${base}\n\n${extra}`;
 }
 
@@ -76,6 +79,7 @@ async function mirrorOne(
   const media = (post.media ?? {}) as { kind?: string; file_id?: string };
   const baseCaption = (post.caption ?? "") as string;
   const postExtra = await getSettingText(db, "post_caption_extra");
+  const fileExtra = await getSettingText(db, "file_caption_extra");
   const caption = appendExtra(baseCaption, postExtra);
 
   try {
@@ -93,13 +97,13 @@ async function mirrorOne(
       main = await copyOrForward(dest, from, Number(sourceMessageId), copyExtra);
     }
 
-    // Mirror extra files (docs, etc.) — best effort. Backup channel is a
-    // "posting" surface, so extras carry post_caption_extra (not file_caption_extra,
-    // which is reserved for user-facing file delivery).
+    // Mirror extra files (docs, etc.) — best effort. Extra files carry the
+    // /filecaption text (they're files, not posts), matching user-facing
+    // delivery behavior.
     const extras = Array.isArray(post.extra_files) ? post.extra_files : [];
     for (const [i, f] of extras.entries()) {
       const smid = f?.source_message_id ?? Number(sourceMessageId) + i + 1;
-      const fCaption = postExtra;
+      const fCaption = fileExtra;
       const fOpt: Record<string, unknown> = fCaption ? { caption: fCaption } : {};
       try {
         if (f?.kind === "photo" && f.file_id) {
