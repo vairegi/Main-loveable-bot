@@ -1,17 +1,28 @@
-// Inline search: users type "@bot query" in any chat and get file matches.
-// Tapping a result posts a short caption + "📥 Get File" deep-link button
-// that opens the bot in DM with /start <code>, honoring fsub/verify/premium.
+// Inline search: users type "@bot query" in any chat and get hentaifox.com
+// results. Tapping a result posts the gallery title + a button that opens
+// the hentaifox gallery URL directly in the browser.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { tg, getBotUsername } from "./telegram";
+import { tg } from "./telegram";
 
 const MAX_RESULTS = 30;
-const CACHE_SECONDS = 10;
+const CACHE_SECONDS = 60;
+const SITE = "https://hentaifox.com";
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
 
-function firstLine(s: string, max = 80): string {
-  const line = (s || "").split("\n").find((l) => l.trim().length > 0) ?? "";
-  const t = line.trim();
-  return t.length > max ? t.slice(0, max - 1) + "…" : t;
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&#0?39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ");
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function truncate(s: string, max = 150): string {
@@ -19,83 +30,92 @@ function truncate(s: string, max = 150): string {
   return t.length > max ? t.slice(0, max - 1) + "…" : t;
 }
 
-export async function handleInlineQuery(db: SupabaseClient, inline: any): Promise<void> {
-  const queryId: string = inline.id;
-  const rawQuery: string = (inline.query ?? "").trim();
-  const offset = Number.parseInt(inline.offset || "0", 10) || 0;
+type Hit = { url: string; title: string; thumb: string | null };
 
-  // Empty query: show newest posts so the picker isn't blank.
-  const isEmpty = rawQuery.length === 0;
+async function searchHentaifox(query: string, page: number): Promise<Hit[]> {
+  const url = query
+    ? `${SITE}/search/?q=${encodeURIComponent(query)}${page > 1 ? `&page=${page}` : ""}`
+    : `${SITE}/${page > 1 ? `page/${page}/` : ""}`;
 
-  let q = db
-    .from("posts")
-    .select("code, caption, created_at")
-    .not("code", "is", null)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + MAX_RESULTS - 1);
+  const res = await fetch(url, {
+    headers: { "User-Agent": UA, Accept: "text/html" },
+  });
+  if (!res.ok) return [];
+  const html = await res.text();
 
-  if (!isEmpty) {
-    // Escape %/_ and split on whitespace — every token must appear in caption.
-    const tokens = rawQuery.split(/\s+/).slice(0, 6);
-    for (const t of tokens) {
-      const safe = t.replace(/[\\%_]/g, (m) => "\\" + m);
-      q = q.ilike("caption", `%${safe}%`);
+  const map = new Map<string, Hit>();
+  const re = /<a href="(\/gallery\/\d+\/)"[^>]*>([\s\S]*?)<\/a>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const path = m[1];
+    const inner = m[2];
+    const full = SITE + path;
+    let hit = map.get(full);
+    if (!hit) {
+      hit = { url: full, title: "", thumb: null };
+      map.set(full, hit);
+    }
+    const imgMatch = inner.match(/data-src="([^"]+)"/);
+    if (imgMatch && !hit.thumb) {
+      hit.thumb = imgMatch[1];
+    } else if (!hit.title) {
+      const text = inner.replace(/<[^>]+>/g, "").trim();
+      if (text) hit.title = decodeEntities(text);
     }
   }
 
-  const { data: rows, error } = await q;
-  if (error) {
-    console.error("inline search failed:", error);
-    await tg("answerInlineQuery", {
-      inline_query_id: queryId,
-      results: [],
-      cache_time: 1,
-      is_personal: true,
-    });
-    return;
+  return Array.from(map.values()).filter((h) => h.title);
+}
+
+export async function handleInlineQuery(_db: SupabaseClient, inline: any): Promise<void> {
+  const queryId: string = inline.id;
+  const rawQuery: string = (inline.query ?? "").trim();
+  const page = Math.max(1, Number.parseInt(inline.offset || "1", 10) || 1);
+
+  let hits: Hit[] = [];
+  try {
+    hits = await searchHentaifox(rawQuery, page);
+  } catch (e) {
+    console.error("hentaifox fetch failed:", e);
   }
 
-  const botUsername = await getBotUsername();
+  const results = hits.slice(0, MAX_RESULTS).map((h, i) => {
+    const title = h.title || "Untitled";
+    const messageText =
+      `<b>${escapeHtml(title)}</b>\n` +
+      `<a href="${escapeHtml(h.url)}">${escapeHtml(h.url)}</a>`;
 
-  const results = (rows ?? [])
-    .filter((r: any) => r.code)
-    .map((r: any, i: number) => {
-      const caption = (r.caption ?? "").toString();
-      const title = firstLine(caption) || `Post ${r.code}`;
-      const desc = truncate(caption.replace(/^.*\n/, "").trim() || caption);
-      const deepLink = `https://t.me/${botUsername}?start=${encodeURIComponent(r.code)}`;
-      return {
-        type: "article",
-        id: `${r.code}-${i}`,
-        title,
-        description: desc,
-        input_message_content: {
-          message_text: `🎬 <b>${escapeHtml(title)}</b>\n\nTap the button below to get the file.`,
-          parse_mode: "HTML",
-        },
-        reply_markup: {
-          inline_keyboard: [[{ text: "📥 Get File", url: deepLink }]],
-        },
-      };
-    });
+    const article: any = {
+      type: "article",
+      id: `hf-${page}-${i}`,
+      title: truncate(title, 90),
+      description: h.url.replace(/^https?:\/\//, ""),
+      url: h.url,
+      hide_url: true,
+      input_message_content: {
+        message_text: messageText,
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: false, prefer_large_media: true },
+      },
+      reply_markup: {
+        inline_keyboard: [[{ text: "🔗 Open on hentaifox", url: h.url }]],
+      },
+    };
+    if (h.thumb) {
+      article.thumbnail_url = h.thumb;
+      article.thumbnail_width = 200;
+      article.thumbnail_height = 280;
+    }
+    return article;
+  });
 
-  const nextOffset = results.length === MAX_RESULTS ? String(offset + MAX_RESULTS) : "";
+  const nextOffset = results.length >= MAX_RESULTS ? String(page + 1) : "";
 
   await tg("answerInlineQuery", {
     inline_query_id: queryId,
     results,
     cache_time: CACHE_SECONDS,
-    is_personal: true,
+    is_personal: false,
     next_offset: nextOffset,
-    button: isEmpty
-      ? undefined
-      : {
-          text: results.length === 0 ? "No results — open bot" : "Open bot",
-          start_parameter: "start",
-        },
   });
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
