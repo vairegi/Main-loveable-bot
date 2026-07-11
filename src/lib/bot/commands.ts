@@ -449,13 +449,39 @@ register("mpost", {
 
 
 register("deletepost", {
-  help: "/deletepost &lt;code&gt; — delete a post from all main channels",
+  help: "/deletepost &lt;code|#N&gt; — delete a post by code or queue position (e.g. #85)",
   adminOnly: true,
   handler: async ({ db, user, args }) => {
-    const code = args[0];
-    if (!code) return "Usage: /deletepost &lt;code&gt;";
+    const arg = args[0];
+    if (!arg) return "Usage: /deletepost &lt;code&gt; or /deletepost #&lt;queue-position&gt;";
+
+    let code = arg;
+
+    // Resolve queue position (#N) to code
+    if (arg.startsWith("#")) {
+      const position = parseInt(arg.slice(1), 10);
+      if (!Number.isFinite(position) || position <= 0) {
+        return `❌ Invalid position: ${arg}`;
+      }
+      const { count: cursor } = await db
+        .from("posts")
+        .select("id", { count: "exact", head: true })
+        .not("posted_at", "is", null);
+      const offset = position - (cursor ?? 0) - 1;
+      if (offset < 0) return `❌ Position #${position} is already posted (cursor at ${cursor}).`;
+      const { data: row } = await db
+        .from("posts")
+        .select("code")
+        .is("posted_at", null)
+        .order("id", { ascending: true })
+        .range(offset, offset)
+        .maybeSingle();
+      if (!row) return `❌ No pending post at position #${position}.`;
+      code = row.code;
+    }
+
     const result = await deletePostByCode(db, code);
-    await logAction(db, user, "delete_post", { code });
+    await logAction(db, user, "delete_post", { code, arg });
     return result;
   },
 });
