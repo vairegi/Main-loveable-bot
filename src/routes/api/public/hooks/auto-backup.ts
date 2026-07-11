@@ -46,6 +46,16 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
         const nowIso = new Date().toISOString();
         const nowMs = Date.now();
 
+        // Honor pause toggle — /pausebackup sets this flag, /resumebackup clears it.
+        const { data: pausedRow } = await db
+          .from("bot_settings")
+          .select("value")
+          .eq("key", "auto_backup_paused")
+          .maybeSingle();
+        if ((pausedRow?.value as { paused?: boolean } | null)?.paused) {
+          return Response.json({ ok: true, paused: true });
+        }
+
         const { data: channels } = await db
           .from("channels")
           .select("telegram_chat_id, title")

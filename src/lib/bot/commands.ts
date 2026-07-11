@@ -180,7 +180,7 @@ register("help", {
       { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
       { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost"] },
       { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "queueinfo", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
-      { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup"] },
+      { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup", "pausebackup", "resumebackup", "backupstatus"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub", "fsublist", "fsubremove"] },
       { title: "📊 Users & moderation", cmds: ["stats", "broadcast", "ban", "unban", "banlist"] },
     ];
@@ -1042,6 +1042,44 @@ register("resetbackup", {
     await logAction(db, user, "reset_backup_tracking", { chatId: cid ?? null, cleared: r.cleared });
     const scope = cid ? `<code>${cid}</code>` : "<b>all backup channels</b>";
     return `♻️ Reset mirror log for ${scope} — cleared <b>${r.cleared}</b> row(s).\nRun /backup ${cid ?? "&lt;chat_id&gt;"} to mirror everything again from post 1.`;
+  },
+});
+
+register("pausebackup", {
+  help: "/pausebackup — pause auto-backup cron (new database posts stop mirroring to backup channels until /resumebackup)",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    await db.from("bot_settings").upsert(
+      { key: "auto_backup_paused", value: { paused: true, at: new Date().toISOString() } },
+      { onConflict: "key" },
+    );
+    await logAction(db, user, "pause_auto_backup", {});
+    return "⏸ <b>Auto-backup paused.</b>\nNew posts will NOT be mirrored to backup channels.\nUse /resumebackup to catch up and resume.";
+  },
+});
+
+register("resumebackup", {
+  help: "/resumebackup — resume auto-backup; all posts added while paused will be forwarded to backup channels on the next cron tick",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    await db.from("bot_settings").upsert(
+      { key: "auto_backup_paused", value: { paused: false, at: new Date().toISOString() } },
+      { onConflict: "key" },
+    );
+    await logAction(db, user, "resume_auto_backup", {});
+    return "▶️ <b>Auto-backup resumed.</b>\nAny posts added while paused will be mirrored to backup channels on the next cron tick (usually within a minute).";
+  },
+});
+
+register("backupstatus", {
+  help: "/backupstatus — show whether auto-backup is paused or running",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { data } = await db.from("bot_settings").select("value").eq("key", "auto_backup_paused").maybeSingle();
+    const paused = Boolean((data?.value as { paused?: boolean } | null)?.paused);
+    return paused
+      ? "⏸ Auto-backup is <b>PAUSED</b>. Use /resumebackup to resume."
+      : "▶️ Auto-backup is <b>RUNNING</b>. Use /pausebackup to pause.";
   },
 });
 
