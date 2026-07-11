@@ -556,10 +556,11 @@ function formatNextFire(when: Date, tzMin: number): string {
 
 register("queueinfo", {
 
-  help: "/queueinfo [n] — show upcoming posts about to be posted (default 10, max 50)",
+  help: "/queueinfo [n] — show upcoming posts about to be posted (default 15, max 50)",
+
   adminOnly: true,
   handler: async ({ db, args }) => {
-    const n = Math.max(1, Math.min(50, Number(args[0]) || 10));
+    const n = Math.max(1, Math.min(50, Number(args[0]) || 15));
 
     // cursor = number of already-posted posts
     const { count: postedCount } = await db
