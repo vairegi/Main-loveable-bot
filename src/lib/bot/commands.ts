@@ -179,7 +179,7 @@ register("help", {
       { title: "🛡️ Admin management", cmds: ["addadmin", "removeadmin", "listadmins", "genimporttoken"] },
       { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
       { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost", "recentposts"] },
-      { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
+      { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "queueinfo", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
       { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub", "fsublist", "fsubremove"] },
       { title: "📊 Users & moderation", cmds: ["stats", "broadcast", "ban", "unban", "banlist"] },
@@ -499,6 +499,117 @@ register("queue", {
     return `${scheduleBlock}\n\n${queueLine}`;
   },
 });
+
+
+register("queueinfo", {
+  help: "/queueinfo [n] — show upcoming posts about to be posted (default 10, max 50)",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    const n = Math.max(1, Math.min(50, Number(args[0]) || 10));
+
+    // cursor = number of already-posted posts
+    const { count: postedCount } = await db
+      .from("posts")
+      .select("*", { count: "exact", head: true })
+      .not("posted_at", "is", null);
+    const cursor = postedCount ?? 0;
+
+    // pending upcoming posts, in the same order dripQueue publishes them
+    const { data: upcoming } = await db
+      .from("posts")
+      .select("code, caption, media")
+      .is("posted_at", null)
+      .order("created_at", { ascending: true })
+      .limit(n);
+
+    const { count: pendingCount } = await db
+      .from("posts")
+      .select("*", { count: "exact", head: true })
+      .is("posted_at", null);
+    const pending = pendingCount ?? 0;
+
+    const esc = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const lines: string[] = [
+      "📋 <b>Queue</b>",
+      `cursor=<b>${cursor}</b>, pending=<b>${pending}</b> (showing up to ${n})`,
+      "",
+    ];
+
+    if (!upcoming?.length) {
+      lines.push("<i>No posts waiting in queue.</i>");
+    } else {
+      upcoming.forEach((p, i) => {
+        const num = cursor + i + 1;
+        const cap = (p.caption ?? "").replace(/\s+/g, " ").trim();
+        const preview = cap ? esc(cap.slice(0, 70)) : "<i>(no caption)</i>";
+        lines.push(` • #${num} — ${preview}`);
+      });
+    }
+
+    // Schedule slots + next fire
+    const s = await getSchedule(db);
+    lines.push("");
+    if (!s.enabled) {
+      lines.push("<b>Slots</b>: <i>schedule off</i>");
+    } else if (s.mode === "times") {
+      const tzMin = s.tz_offset_minutes ?? 0;
+      const now = new Date();
+      const local = new Date(now.getTime() + tzMin * 60_000);
+      const yyyy = local.getUTCFullYear();
+      const mm = String(local.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(local.getUTCDate()).padStart(2, "0");
+      const dateKey = `${yyyy}-${mm}-${dd}`;
+      const doneSlots = s.slots_done_for === dateKey ? (s.done_slots ?? []) : [];
+
+      lines.push("<b>Slots</b>:");
+      for (const t of s.times) {
+        const done = doneSlots.includes(t);
+        lines.push(` • ${t} × ${s.per_slot} ${done ? "✅" : "⏳"}`);
+      }
+
+      // Next fire: first slot today not done and >= now; else first slot tomorrow
+      const nowMinutes = local.getUTCHours() * 60 + local.getUTCMinutes();
+      let nextFire: Date | null = null;
+      const parsed = s.times
+        .map((t) => {
+          const [h, m] = t.split(":").map(Number);
+          return { t, mins: h * 60 + m };
+        })
+        .filter((x) => Number.isFinite(x.mins))
+        .sort((a, b) => a.mins - b.mins);
+
+      for (const p of parsed) {
+        if (!doneSlots.includes(p.t) && p.mins >= nowMinutes) {
+          const d = new Date(local);
+          d.setUTCHours(Math.floor(p.mins / 60), p.mins % 60, 0, 0);
+          nextFire = new Date(d.getTime() - tzMin * 60_000);
+          break;
+        }
+      }
+      if (!nextFire && parsed.length) {
+        const first = parsed[0];
+        const d = new Date(local);
+        d.setUTCDate(d.getUTCDate() + 1);
+        d.setUTCHours(Math.floor(first.mins / 60), first.mins % 60, 0, 0);
+        nextFire = new Date(d.getTime() - tzMin * 60_000);
+      }
+      if (nextFire) {
+        lines.push("");
+        lines.push(`Next fire: <code>${nextFire.toISOString().replace(".000", "")}</code>`);
+      }
+    } else if (s.mode === "interval") {
+      const last = s.last_drip_at ? new Date(s.last_drip_at) : null;
+      const next = last ? new Date(last.getTime() + s.interval_minutes * 60_000) : new Date();
+      lines.push(`<b>Interval</b>: every ${s.interval_minutes} min × ${s.batch_size}`);
+      lines.push(`Next fire: <code>${next.toISOString()}</code>`);
+    }
+
+    return lines.join("\n");
+  },
+});
+
 
 
 register("scheduleoff", {
