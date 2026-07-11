@@ -475,32 +475,31 @@ register("recentposts", {
 // ---------------- Phase 3: queue + drip scheduler ----------------
 
 register("queue", {
-  help: "/queue — how many posts are waiting in the drip queue",
+  help: "/queue — show drip schedule and queue size",
   adminOnly: true,
   handler: async ({ db }) => {
     const size = await queueSize(db);
     const { count: total } = await db.from("posts").select("*", { count: "exact", head: true });
-    return `📥 Queue: <b>${size}</b> waiting (of ${total ?? 0} total).`;
+    const queueLine = `📥 Queue: <b>${size}</b> waiting (of ${total ?? 0} total).`;
+
+    const s = await getSchedule(db);
+    let scheduleBlock: string;
+    if (!s.enabled) {
+      scheduleBlock = "⏹️ Schedule is <b>off</b>. Use /setschedule to configure it.";
+    } else if (s.mode === "interval") {
+      const last = s.last_drip_at ? new Date(s.last_drip_at).toISOString() : "never";
+      scheduleBlock = `▶️ Mode: <b>interval</b>\nEvery <b>${s.interval_minutes}</b> minutes, <b>${s.batch_size}</b> post(s) per drip.\nLast drip: ${last}`;
+    } else if (s.mode === "times") {
+      const tzHours = (s.tz_offset_minutes ?? 0) / 60;
+      scheduleBlock = `▶️ Mode: <b>times</b>\nSlots (UTC${tzHours >= 0 ? "+" : ""}${tzHours}): <b>${s.times.join(", ")}</b>\n<b>${s.per_slot}</b> post(s) per slot.`;
+    } else {
+      scheduleBlock = "Schedule format not recognized.";
+    }
+
+    return `${scheduleBlock}\n\n${queueLine}`;
   },
 });
 
-register("schedulestatus", {
-  help: "/schedulestatus — show current drip schedule",
-  adminOnly: true,
-  handler: async ({ db }) => {
-    const s = await getSchedule(db);
-    if (!s.enabled) return "⏹️ Schedule is <b>off</b>. Use /setschedule to configure it.";
-    if (s.mode === "interval") {
-      const last = s.last_drip_at ? new Date(s.last_drip_at).toISOString() : "never";
-      return `▶️ Mode: <b>interval</b>\nEvery <b>${s.interval_minutes}</b> minutes, <b>${s.batch_size}</b> post(s) per drip.\nLast drip: ${last}`;
-    }
-    if (s.mode === "times") {
-      const tzHours = (s.tz_offset_minutes ?? 0) / 60;
-      return `▶️ Mode: <b>times</b>\nSlots (UTC${tzHours >= 0 ? "+" : ""}${tzHours}): <b>${s.times.join(", ")}</b>\n<b>${s.per_slot}</b> post(s) per slot.`;
-    }
-    return "Schedule format not recognized.";
-  },
-});
 
 register("scheduleoff", {
   help: "/scheduleoff — pause the drip scheduler",
