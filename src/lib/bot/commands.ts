@@ -560,7 +560,7 @@ register("queueinfo", {
 
   adminOnly: true,
   handler: async ({ db, args }) => {
-    const n = Math.max(1, Math.min(50, Number(args[0]) || 10));
+    const n = Math.max(1, Math.min(50, Number(args[0]) || 15));
 
     // cursor = number of already-posted posts
     const { count: postedCount } = await db
