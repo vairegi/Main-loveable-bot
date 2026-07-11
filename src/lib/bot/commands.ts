@@ -1401,6 +1401,18 @@ register("banlist", {
   },
 });
 
+register("search", {
+  help: "/search &lt;query&gt; — search hentaifox, tick multiple, then send links (admins)",
+  adminOnly: true,
+  handler: async ({ db, chatId, user, rawText }) => {
+    const query = rawText.replace(/^\/search(@\S+)?\s*/i, "").trim();
+    const { handleSearchCommand } = await import("./search");
+    return handleSearchCommand(db, chatId, user.id, query);
+  },
+});
+
+
+
 
 
 

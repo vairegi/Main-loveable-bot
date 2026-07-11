@@ -43,6 +43,18 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return Response.json({ ok: true, inline: true });
         }
 
+        // Callback buttons (e.g. /search multi-select checkboxes).
+        if (update.callback_query) {
+          try {
+            const { handleSearchCallback } = await import("@/lib/bot/search");
+            await handleSearchCallback(db, update.callback_query);
+          } catch (e) {
+            console.error("handleSearchCallback failed:", e);
+          }
+          return Response.json({ ok: true, callback: true });
+        }
+
+
 
         // Handle join requests for forced-subscription channels (approval-required invite links).
         const joinReq = update.chat_join_request;
