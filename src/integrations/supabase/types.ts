@@ -339,6 +339,36 @@ export type Database = {
         }
         Relationships: []
       }
+      search_sessions: {
+        Row: {
+          chat_id: number
+          created_at: string
+          hits: Json
+          message_id: number
+          query: string
+          selected: Json
+          user_id: number
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          hits?: Json
+          message_id: number
+          query?: string
+          selected?: Json
+          user_id: number
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          hits?: Json
+          message_id?: number
+          query?: string
+          selected?: Json
+          user_id?: number
+        }
+        Relationships: []
+      }
       telegram_updates: {
         Row: {
           received_at: string

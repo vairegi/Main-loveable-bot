@@ -30,7 +30,7 @@ function truncate(s: string, max = 150): string {
   return t.length > max ? t.slice(0, max - 1) + "…" : t;
 }
 
-type Hit = { url: string; title: string; thumb: string | null };
+export type Hit = { url: string; title: string; thumb: string | null };
 
 async function fetchAndParse(url: string): Promise<Hit[]> {
   const res = await fetch(url, {
@@ -72,7 +72,7 @@ function slugify(q: string): string {
     .replace(/-+/g, "-");
 }
 
-async function searchHentaifox(query: string, page: number): Promise<Hit[]> {
+export async function searchHentaifox(query: string, page: number): Promise<Hit[]> {
   if (!query) {
     return fetchAndParse(`${SITE}/${page > 1 ? `page/${page}/` : ""}`);
   }
