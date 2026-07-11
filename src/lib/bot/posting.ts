@@ -342,7 +342,8 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
   const media = mediaWithSource((post.media ?? {}) as TgMedia, sourceMessageId);
   const postExtra = await getExtraCaption(db, "post_caption_extra");
   const fileExtra = await getExtraCaption(db, "file_caption_extra");
-  const caption = appendExtra(post.caption ?? "", postExtra);
+  const position = await getPostPosition(db, post);
+  const caption = `#${position}\n\n${appendExtra(post.caption ?? "", postExtra)}`.trim();
   const extras = Array.isArray(post.extra_files) ? (post.extra_files as TgMedia[]) : [];
   const opts = await getPostingOptions(db);
   const protectExtra = opts.protect ? { protect_content: true } : {};
