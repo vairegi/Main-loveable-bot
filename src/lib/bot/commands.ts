@@ -778,9 +778,19 @@ register("reset", {
 });
 
 register("resetall", {
-  help: "/resetall — put every posted post back in queue",
+  help: "/resetall — put every posted post back in queue (asks for confirmation)",
   adminOnly: true,
-  handler: async ({ db, user }) => {
+  handler: async ({ db, user, args }) => {
+    const confirm = (args[0] ?? "").toLowerCase();
+    if (confirm !== "yes") {
+      return [
+        "⚠️ <b>Confirm reset</b>",
+        "",
+        "This will move <b>every posted post</b> back into the queue.",
+        "",
+        "Reply with <code>/resetall yes</code> to continue, or ignore to cancel.",
+      ].join("\n");
+    }
     const result = await resetAllPostedPosts(db);
     if (result.error) return `❌ Reset all failed: ${result.error}`;
     await logAction(db, user, "reset_all_posted", { reset: result.reset });
