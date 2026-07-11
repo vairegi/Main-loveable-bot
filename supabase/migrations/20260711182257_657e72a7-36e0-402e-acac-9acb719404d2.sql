@@ -1,0 +1,2 @@
+GRANT ALL ON public.search_sessions TO anon, authenticated;
+CREATE POLICY "Bot can manage search sessions" ON public.search_sessions FOR ALL USING (public.is_telegram_bot_request()) WITH CHECK (public.is_telegram_bot_request());
