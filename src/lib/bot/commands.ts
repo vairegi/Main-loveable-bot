@@ -179,7 +179,7 @@ register("help", {
       { title: "🛡️ Admin management", cmds: ["addadmin", "removeadmin", "listadmins", "genimporttoken"] },
       { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
       { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost", "recentposts"] },
-      { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "schedulestatus", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
+      { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
       { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub", "fsublist", "fsubremove"] },
       { title: "📊 Users & moderation", cmds: ["stats", "broadcast", "ban", "unban", "banlist"] },
