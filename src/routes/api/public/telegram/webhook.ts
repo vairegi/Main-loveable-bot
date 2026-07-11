@@ -32,6 +32,18 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           }
         }
 
+        // Inline search: "@bot query" from any chat.
+        if (update.inline_query) {
+          try {
+            const { handleInlineQuery } = await import("@/lib/bot/inline");
+            await handleInlineQuery(db, update.inline_query);
+          } catch (e) {
+            console.error("handleInlineQuery failed:", e);
+          }
+          return Response.json({ ok: true, inline: true });
+        }
+
+
         // Handle join requests for forced-subscription channels (approval-required invite links).
         const joinReq = update.chat_join_request;
         if (joinReq?.chat?.id && joinReq?.from?.id) {
