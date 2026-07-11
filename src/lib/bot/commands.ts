@@ -597,7 +597,8 @@ register("queueinfo", {
       upcoming.forEach((p, i) => {
         const num = cursor + i + 1;
         const cap = (p.caption ?? "").replace(/\s+/g, " ").trim();
-        const preview = cap ? esc(cap.slice(0, 70)) : "<i>(no caption)</i>";
+        const title = cap.split("➤")[0].trim();
+        const preview = title ? esc(title) : "<i>(no caption)</i>";
         lines.push(` • #${num} — ${preview}`);
       });
     }
