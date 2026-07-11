@@ -603,7 +603,7 @@ register("queueinfo", {
       const last = s.last_drip_at ? new Date(s.last_drip_at) : null;
       const next = last ? new Date(last.getTime() + s.interval_minutes * 60_000) : new Date();
       lines.push(`<b>Interval</b>: every ${s.interval_minutes} min × ${s.batch_size}`);
-      lines.push(formatNextFire(next, s.tz_offset_minutes ?? 0));
+      lines.push(formatNextFire(next, 0));
     }
 
     return lines.join("\n");
