@@ -80,21 +80,22 @@ async function mirrorOne(
   const baseCaption = (post.caption ?? "") as string;
   const postExtra = await getSettingText(db, "post_caption_extra");
   const fileExtra = await getSettingText(db, "file_caption_extra");
-  const caption = appendExtra(baseCaption, postExtra);
+  const { getPostPosition } = await import("./posting");
+  const position = await getPostPosition(db, post);
+  const caption = `#${position}\n\n${appendExtra(baseCaption, postExtra)}`.trim();
 
   try {
     // Mirror the main message. If it's a photo/video with a stored file_id,
     // re-send it with has_spoiler so the backup channel gets a spoiler-covered
-    // media. Otherwise fall back to copy/forward (with caption override when
-    // an extra caption is configured).
+    // media. Otherwise fall back to copy/forward (with caption override so the
+    // position tag is preserved).
     let main: any;
     if (media.kind === "photo" && media.file_id) {
       main = await sendPhoto(dest, media.file_id, { caption, has_spoiler: true });
     } else if (media.kind === "video" && media.file_id) {
       main = await sendVideo(dest, media.file_id, { caption, has_spoiler: true });
     } else {
-      const copyExtra = postExtra ? { caption } : {};
-      main = await copyOrForward(dest, from, Number(sourceMessageId), copyExtra);
+      main = await copyOrForward(dest, from, Number(sourceMessageId), { caption });
     }
 
     // Mirror extra files (docs, etc.) — best effort. Extra files carry the
@@ -159,7 +160,7 @@ export async function backupAllToChannel(
 ): Promise<BackupResult & { totalAll: number; totalToDo: number; doneAll: number; skippedIds: number[] }> {
   const { data: posts } = await db
     .from("posts")
-    .select("id, source_chat_id, source_message_id, extra_files, media, caption")
+    .select("id, source_chat_id, source_message_id, extra_files, media, caption, created_at")
     .order("created_at", { ascending: true });
 
   const totalAll = posts?.length ?? 0;

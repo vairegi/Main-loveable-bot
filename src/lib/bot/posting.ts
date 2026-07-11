@@ -220,16 +220,26 @@ export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<
   return { posted, failed, drained: queue.length < batchSize, failures };
 }
 
+export async function getPostPosition(db: SupabaseClient, post: { created_at: string }): Promise<number> {
+  const { count } = await db
+    .from("posts")
+    .select("id", { count: "exact", head: true })
+    .lte("created_at", post.created_at);
+  return count ?? 1;
+}
+
 async function publishPost(db: SupabaseClient, post: any): Promise<void> {
   const { data: mains } = await db.from("channels").select("telegram_chat_id").eq("role", "main");
   if (!mains?.length) throw new Error("No main channels registered");
 
   const botUsername = await getBotUsername();
   const template = await getCaptionTemplate(db);
-  const captionText = appendExtra(
+  const position = await getPostPosition(db, post);
+  const rendered = appendExtra(
     renderCaption(template, { caption: post.caption ?? "", code: post.code }),
     await getExtraCaption(db, "post_caption_extra"),
   );
+  const captionText = `#${position}\n\n${rendered}`.trim();
   const keyboard = buildGetFileKeyboard(botUsername, post.code);
   const sourceChatId = post.source_chat_id ? chatId(post.source_chat_id) : undefined;
   const sourceMessageId = numericMessageId(post.source_message_id);
