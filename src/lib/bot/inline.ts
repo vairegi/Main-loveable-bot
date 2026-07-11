@@ -32,11 +32,7 @@ function truncate(s: string, max = 150): string {
 
 type Hit = { url: string; title: string; thumb: string | null };
 
-async function searchHentaifox(query: string, page: number): Promise<Hit[]> {
-  const url = query
-    ? `${SITE}/search/?q=${encodeURIComponent(query)}${page > 1 ? `&page=${page}` : ""}`
-    : `${SITE}/${page > 1 ? `page/${page}/` : ""}`;
-
+async function fetchAndParse(url: string): Promise<Hit[]> {
   const res = await fetch(url, {
     headers: { "User-Agent": UA, Accept: "text/html" },
   });
@@ -65,6 +61,38 @@ async function searchHentaifox(query: string, page: number): Promise<Hit[]> {
   }
 
   return Array.from(map.values()).filter((h) => h.title);
+}
+
+function slugify(q: string): string {
+  return q
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+async function searchHentaifox(query: string, page: number): Promise<Hit[]> {
+  if (!query) {
+    return fetchAndParse(`${SITE}/${page > 1 ? `page/${page}/` : ""}`);
+  }
+
+  // 1. Free-text search first.
+  const searchUrl = `${SITE}/search/?q=${encodeURIComponent(query)}${page > 1 ? `&page=${page}` : ""}`;
+  const hits = await fetchAndParse(searchUrl);
+  if (hits.length > 0) return hits;
+
+  // 2. Fallback: tag page (many single-word queries like "incest" have 0
+  //    free-text results but a populated /tag/<slug>/ page).
+  const slug = slugify(query);
+  if (!slug) return [];
+  const tagUrl = `${SITE}/tag/${encodeURIComponent(slug)}/${page > 1 ? `pag/${page}/` : ""}`;
+  const tagHits = await fetchAndParse(tagUrl);
+  if (tagHits.length > 0) return tagHits;
+
+  // 3. Last-ditch: parody slug (some queries are parody names).
+  const parodyUrl = `${SITE}/parody/${encodeURIComponent(slug)}/${page > 1 ? `pag/${page}/` : ""}`;
+  return fetchAndParse(parodyUrl);
 }
 
 export async function handleInlineQuery(_db: SupabaseClient, inline: any): Promise<void> {
