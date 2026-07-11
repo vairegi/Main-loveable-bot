@@ -1045,6 +1045,44 @@ register("resetbackup", {
   },
 });
 
+register("pausebackup", {
+  help: "/pausebackup — pause auto-backup cron (new database posts stop mirroring to backup channels until /resumebackup)",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    await db.from("bot_settings").upsert(
+      { key: "auto_backup_paused", value: { paused: true, at: new Date().toISOString() } },
+      { onConflict: "key" },
+    );
+    await logAction(db, user, "pause_auto_backup", {});
+    return "⏸ <b>Auto-backup paused.</b>\nNew posts will NOT be mirrored to backup channels.\nUse /resumebackup to catch up and resume.";
+  },
+});
+
+register("resumebackup", {
+  help: "/resumebackup — resume auto-backup; all posts added while paused will be forwarded to backup channels on the next cron tick",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    await db.from("bot_settings").upsert(
+      { key: "auto_backup_paused", value: { paused: false, at: new Date().toISOString() } },
+      { onConflict: "key" },
+    );
+    await logAction(db, user, "resume_auto_backup", {});
+    return "▶️ <b>Auto-backup resumed.</b>\nAny posts added while paused will be mirrored to backup channels on the next cron tick (usually within a minute).";
+  },
+});
+
+register("backupstatus", {
+  help: "/backupstatus — show whether auto-backup is paused or running",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { data } = await db.from("bot_settings").select("value").eq("key", "auto_backup_paused").maybeSingle();
+    const paused = Boolean((data?.value as { paused?: boolean } | null)?.paused);
+    return paused
+      ? "⏸ Auto-backup is <b>PAUSED</b>. Use /resumebackup to resume."
+      : "▶️ Auto-backup is <b>RUNNING</b>. Use /pausebackup to pause.";
+  },
+});
+
 register("autodelete", {
   help: "/autodelete &lt;duration&gt; — auto-delete files sent to users after Xh/Xm/Xd (e.g. 12h, 30m, 2d). Use /autodelete off to disable.",
   adminOnly: true,
