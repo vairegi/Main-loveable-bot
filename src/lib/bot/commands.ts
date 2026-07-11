@@ -316,8 +316,34 @@ register("listchannels", {
   handler: async ({ db }) => {
     const { data } = await db.from("channels").select("*").order("role");
     if (!data?.length) return "No channels registered.";
-    return data
-      .map((c) => `• <b>${c.role}</b> — <code>${c.telegram_chat_id}</code> ${c.title ?? ""}`)
+
+    // Resolve missing titles via Telegram, then persist for next time.
+    const resolved = await Promise.all(
+      data.map(async (c: any) => {
+        let title: string | null = c.title ?? null;
+        if (!title || !String(title).trim()) {
+          try {
+            const chat: any = await tg("getChat", { chat_id: c.telegram_chat_id });
+            title = chat?.title ?? chat?.username ?? null;
+            if (title) {
+              db.from("channels")
+                .update({ title })
+                .eq("telegram_chat_id", c.telegram_chat_id)
+                .then(() => {}, () => {});
+            }
+          } catch {
+            /* bot may not be a member — leave title null */
+          }
+        }
+        return { ...c, title };
+      }),
+    );
+
+    return resolved
+      .map(
+        (c: any) =>
+          `• <b>${c.role}</b> — ${c.title ? `<b>${c.title}</b> ` : ""}<code>${c.telegram_chat_id}</code>`,
+      )
       .join("\n");
   },
 });
