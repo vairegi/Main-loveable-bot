@@ -122,7 +122,26 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
 
         try {
           const reply = await dispatchCommand(ctx, cmdName);
-          if (reply) await sendMessage(ctx.chatId, reply);
+          if (reply) {
+            // Telegram caps sendMessage text at 4096 chars. Split on newlines
+            // so long replies (e.g. /help) don't 400 with "message is too long".
+            const LIMIT = 3800;
+            if (reply.length <= LIMIT) {
+              await sendMessage(ctx.chatId, reply);
+            } else {
+              const lines = reply.split("\n");
+              let buf = "";
+              for (const ln of lines) {
+                if (buf.length + ln.length + 1 > LIMIT) {
+                  if (buf) await sendMessage(ctx.chatId, buf);
+                  buf = ln;
+                } else {
+                  buf = buf ? buf + "\n" + ln : ln;
+                }
+              }
+              if (buf) await sendMessage(ctx.chatId, buf);
+            }
+          }
         } catch (e: any) {
           console.error("Command error:", e);
           try {
