@@ -420,14 +420,48 @@ register("resumeposting", {
   },
 });
 
+// Resolve a code|#N|N argument to a post code.
+// Returns { code } on success, or { error } on failure.
+async function resolveCodeOrPosition(
+  db: Parameters<typeof deletePostByCode>[0],
+  arg: string,
+): Promise<{ code?: string; error?: string }> {
+  // Position: "#15" or plain "15"
+  const stripped = arg.startsWith("#") ? arg.slice(1) : arg;
+  const isPosition = /^\d+$/.test(stripped);
+  if (!isPosition) return { code: arg };
+
+  const position = parseInt(stripped, 10);
+  if (!Number.isFinite(position) || position <= 0) {
+    return { error: `❌ Invalid position: ${arg}` };
+  }
+  const { count: cursor } = await db
+    .from("posts")
+    .select("id", { count: "exact", head: true })
+    .not("posted_at", "is", null);
+  const offset = position - (cursor ?? 0) - 1;
+  if (offset < 0) return { error: `❌ Position #${position} is already posted (cursor at ${cursor}).` };
+  const { data: row } = await db
+    .from("posts")
+    .select("code")
+    .is("posted_at", null)
+    .order("id", { ascending: true })
+    .range(offset, offset)
+    .maybeSingle();
+  if (!row) return { error: `❌ No pending post at position #${position}.` };
+  return { code: row.code };
+}
+
 register("repost", {
-  help: "/repost &lt;code&gt; — repost a stored post to all main channels",
+  help: "/repost &lt;code|#N&gt; — repost a stored post (by code or queue position, e.g. /repost 15)",
   adminOnly: true,
   handler: async ({ db, user, args }) => {
-    const code = args[0];
-    if (!code) return "Usage: /repost &lt;code&gt;";
+    const arg = args[0];
+    if (!arg) return "Usage: /repost &lt;code&gt; or /repost &lt;queue-position&gt;";
+    const { code, error } = await resolveCodeOrPosition(db, arg);
+    if (error || !code) return error ?? "❌ Could not resolve post.";
     const result = await repostByCode(db, code);
-    await logAction(db, user, "repost", { code });
+    await logAction(db, user, "repost", { code, arg });
     return result;
   },
 });
@@ -449,54 +483,20 @@ register("mpost", {
 
 
 register("deletepost", {
-  help: "/deletepost &lt;code|#N&gt; — delete a post by code or queue position (e.g. #85)",
+  help: "/deletepost &lt;code|#N&gt; — delete a post by code or queue position (e.g. /deletepost 15)",
   adminOnly: true,
   handler: async ({ db, user, args }) => {
     const arg = args[0];
-    if (!arg) return "Usage: /deletepost &lt;code&gt; or /deletepost #&lt;queue-position&gt;";
-
-    let code = arg;
-
-    // Resolve queue position (#N) to code
-    if (arg.startsWith("#")) {
-      const position = parseInt(arg.slice(1), 10);
-      if (!Number.isFinite(position) || position <= 0) {
-        return `❌ Invalid position: ${arg}`;
-      }
-      const { count: cursor } = await db
-        .from("posts")
-        .select("id", { count: "exact", head: true })
-        .not("posted_at", "is", null);
-      const offset = position - (cursor ?? 0) - 1;
-      if (offset < 0) return `❌ Position #${position} is already posted (cursor at ${cursor}).`;
-      const { data: row } = await db
-        .from("posts")
-        .select("code")
-        .is("posted_at", null)
-        .order("id", { ascending: true })
-        .range(offset, offset)
-        .maybeSingle();
-      if (!row) return `❌ No pending post at position #${position}.`;
-      code = row.code;
-    }
-
+    if (!arg) return "Usage: /deletepost &lt;code&gt; or /deletepost &lt;queue-position&gt;";
+    const { code, error } = await resolveCodeOrPosition(db, arg);
+    if (error || !code) return error ?? "❌ Could not resolve post.";
     const result = await deletePostByCode(db, code);
     await logAction(db, user, "delete_post", { code, arg });
     return result;
   },
 });
 
-register("recentposts", {
-  help: "/recentposts — show last 10 posts with their codes",
-  adminOnly: true,
-  handler: async ({ db }) => {
-    const { data } = await db.from("posts").select("code, caption, posted_at, created_at").order("created_at", { ascending: false }).limit(10);
-    if (!data?.length) return "No posts yet.";
-    return data
-      .map((p) => `${p.posted_at ? "✅" : "🕒"} <code>${p.code}</code> — ${(p.caption ?? "").slice(0, 40) || "(no caption)"}`)
-      .join("\n");
-  },
-});
+
 
 // ---------------- Phase 3: queue + drip scheduler ----------------
 
