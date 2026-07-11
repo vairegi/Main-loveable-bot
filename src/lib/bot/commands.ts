@@ -180,7 +180,7 @@ register("help", {
       { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
       { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost"] },
       { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "queueinfo", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
-      { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup"] },
+      { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup", "pausebackup", "resumebackup", "backupstatus"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub", "fsublist", "fsubremove"] },
       { title: "📊 Users & moderation", cmds: ["stats", "broadcast", "ban", "unban", "banlist"] },
     ];
