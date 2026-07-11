@@ -501,7 +501,35 @@ register("queue", {
 });
 
 
+function formatNextFire(when: Date, tzMin: number): string {
+  const sign = tzMin >= 0 ? "+" : "-";
+  const abs = Math.abs(tzMin);
+  const tzH = Math.floor(abs / 60);
+  const tzM = abs % 60;
+  const tzLabel = tzM ? `UTC${sign}${tzH}:${String(tzM).padStart(2, "0")}` : `UTC${sign}${tzH}`;
+
+  const local = new Date(when.getTime() + tzMin * 60_000);
+  const yyyy = local.getUTCFullYear();
+  const mm = String(local.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(local.getUTCDate()).padStart(2, "0");
+  const hh = String(local.getUTCHours()).padStart(2, "0");
+  const mi = String(local.getUTCMinutes()).padStart(2, "0");
+
+  const diffMs = when.getTime() - Date.now();
+  let rel: string;
+  if (diffMs <= 0) {
+    rel = "due now";
+  } else {
+    const totalMin = Math.round(diffMs / 60_000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    rel = h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
+  }
+  return `⏰ Next fire: <b>${hh}:${mi}</b> (${tzLabel}) on ${yyyy}-${mm}-${dd} — <i>${rel}</i>`;
+}
+
 register("queueinfo", {
+
   help: "/queueinfo [n] — show upcoming posts about to be posted (default 10, max 50)",
   adminOnly: true,
   handler: async ({ db, args }) => {
