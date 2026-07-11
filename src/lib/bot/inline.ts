@@ -137,7 +137,9 @@ export async function handleInlineQuery(_db: SupabaseClient, inline: any): Promi
     return article;
   });
 
-  const nextOffset = results.length >= MAX_RESULTS ? String(page + 1) : "";
+  // Hentaifox returns ~20 galleries per page. Ask for the next page whenever
+  // we got a non-empty batch so Telegram keeps paginating as the user scrolls.
+  const nextOffset = hits.length > 0 ? String(page + 1) : "";
 
   await tg("answerInlineQuery", {
     inline_query_id: queryId,
