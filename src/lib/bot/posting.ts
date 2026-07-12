@@ -467,8 +467,8 @@ export async function postByLink(db: SupabaseClient, link: string): Promise<stri
   }
 }
 
-export async function deletePostByCode(db: SupabaseClient, code: string): Promise<string> {
-  const { data: post } = await db.from("posts").select("id").eq("code", code).maybeSingle();
+export async function deletePostByCode(db: SupabaseClient, code: string, deletedBy?: number): Promise<string> {
+  const { data: post } = await db.from("posts").select("*").eq("code", code).maybeSingle();
   if (!post) return `❌ No post found with code <code>${code}</code>.`;
 
   const { data: copies } = await db.from("post_copies").select("*").eq("post_id", post.id);
@@ -482,9 +482,75 @@ export async function deletePostByCode(db: SupabaseClient, code: string): Promis
       failed++;
     }
   }
+
+  // Archive to deleted_posts so /undelete can restore.
+  await db.from("deleted_posts").insert({
+    original_post_id: post.id,
+    code: post.code,
+    source_chat_id: post.source_chat_id,
+    source_message_id: post.source_message_id,
+    caption: post.caption,
+    media: post.media ?? {},
+    extra_files: post.extra_files ?? [],
+    media_group_id: post.media_group_id ?? null,
+    fetch_count: post.fetch_count ?? 0,
+    created_by: post.created_by ?? null,
+    original_created_at: post.created_at ?? null,
+    original_posted_at: post.posted_at ?? null,
+    deleted_by: deletedBy ?? null,
+  });
+
   await db.from("posts").delete().eq("id", post.id);
-  return `🗑️ Deleted post <code>${code}</code> — ${deleted} copies removed${failed ? `, ${failed} failed` : ""}.`;
+  return `🗑️ Deleted post <code>${code}</code> — ${deleted} copies removed${failed ? `, ${failed} failed` : ""}.\n↩️ Restore with <code>/undelete ${code}</code>.`;
 }
+
+export async function undeletePostByCode(db: SupabaseClient, code: string): Promise<string> {
+  const { data: archived } = await db
+    .from("deleted_posts")
+    .select("*")
+    .eq("code", code)
+    .order("deleted_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!archived) return `❌ No archived post found with code <code>${code}</code>.`;
+
+  const { data: existing } = await db.from("posts").select("id").eq("code", code).maybeSingle();
+  if (existing) return `⚠️ A live post with code <code>${code}</code> already exists (id ${existing.id}). Aborting restore.`;
+
+  const { data: restored, error } = await db
+    .from("posts")
+    .insert({
+      code: archived.code,
+      source_chat_id: archived.source_chat_id,
+      source_message_id: archived.source_message_id,
+      caption: archived.caption,
+      media: archived.media ?? {},
+      extra_files: archived.extra_files ?? [],
+      media_group_id: archived.media_group_id ?? null,
+      fetch_count: archived.fetch_count ?? 0,
+      created_by: archived.created_by ?? null,
+      created_at: archived.original_created_at ?? undefined,
+      posted_at: null, // re-enter the queue so it gets republished
+    })
+    .select("id")
+    .single();
+
+  if (error || !restored) return `❌ Restore failed: ${error?.message ?? "unknown"}`;
+
+  await db.from("deleted_posts").delete().eq("id", archived.id);
+
+  return `♻️ Restored post <code>${code}</code> (new id ${restored.id}). It's back in the queue — use <code>/repost ${code}</code> to publish immediately.`;
+}
+
+export async function listDeletedPosts(db: SupabaseClient, limit = 20): Promise<Array<{ code: string; deleted_at: string; caption: string | null }>> {
+  const { data } = await db
+    .from("deleted_posts")
+    .select("code, deleted_at, caption")
+    .order("deleted_at", { ascending: false })
+    .limit(limit);
+  return data ?? [];
+}
+
 
 // -------- Queue reset helpers --------
 export async function resetPostedPosts(db: SupabaseClient, limit: number): Promise<{ reset: number; codes: string[]; error?: string }> {
