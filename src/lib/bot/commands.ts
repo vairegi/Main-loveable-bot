@@ -180,7 +180,7 @@ register("help", {
       { title: "👤 General", cmds: ["start", "help", "whoami"] },
       { title: "🛡️ Admin management", cmds: ["addadmin", "removeadmin", "listadmins", "genimporttoken"] },
       { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
-      { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost"] },
+      { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost", "undelete", "deletedposts"] },
       { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "queueinfo", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
       { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup", "pausebackup", "resumebackup", "backupstatus"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub", "fsublist", "fsubremove"] },
