@@ -1,95 +1,74 @@
+You picked **1, 2, 5, 7, 11, 13, 14, 16, 17, 18, 20**. Here's how I'd sequence them so each phase is independently useful and testable.
 
-# Telegram File-Sharing Bot System
+## Phase 1 — Performance + safety (low risk, high ROI)
 
-Built on Lovable's hosting (no VPS, no SSH). Everything controlled via Telegram commands — no code editing, no config files.
+**#1 Fix slow backup scanner**
+- Rewrite `scanDatabaseToBackups` in `src/lib/bot/backups.ts` from `OFFSET` pagination to keyset: `WHERE id > :last_id ORDER BY id LIMIT N`.
+- Add index `posts(id)` is already the PK, so no new index needed; verify EXPLAIN.
 
-## Tech choices (and why)
+**#2 Cache `bot_settings` per request**
+- Add a tiny in-memory cache keyed by `key` inside `src/lib/bot/db.ts` (or a new `settings.ts`), scoped to one webhook invocation (Map cleared per request via the dispatcher).
+- Replace all direct `bot_settings` reads with `getSetting(db, key)`.
 
-- **Telegram Bot API** via Lovable's Telegram connector — you never handle bot tokens directly, gateway auth is automatic.
-- **Lovable Cloud (Postgres)** — all state lives in the database: settings, channels, files, users, premium, referrals, logs. Nothing hardcoded.
-- **TanStack Start server routes** — one public webhook endpoint per bot. Webhooks (not polling) = instant, no cold starts, scales for free.
-- **Runs 24/7 on Lovable's hosting** — auto-restart, no systemd, no server admin.
+**#20 Confirm-before-destroy**
+- Wrap `/reset`, `/resetall`, `/removebackup` handlers with a two-step inline-keyboard prompt (`Yes, wipe` / `Cancel`). Reuse the existing callback router.
+- Store the pending destructive action in `search_sessions`-style row keyed by `user_id + action`, expires after 60s.
 
-## Important trade-off vs your original Telethon plan
+## Phase 2 — New commands (isolated additions)
 
-Bot API bots can't read arbitrary channel history like a userbot. **The management bot must be added as admin to your Database Channel and your Main Channel(s)** so it receives channel-post updates and can post/edit/delete there. That's the standard supported way for automation bots.
+**#5 `/stats` upgrade** — aggregate query over `bot_users`, `posts`, `activity_log`, `backup_failures`:
+- DAU/WAU/MAU, posts published today/7d, top 10 fetched posts, backup lag (max age of un-backed-up post), failed-broadcast count.
 
-## Phased build order
+**#7 `/duplicates`** — group `posts` by normalized caption hash and by `media->>0->>'file_unique_id'`; list top N groups with post ids. Admin-only.
 
-Each phase is fully working and testable before we move on. After every phase I'll walk you through the new commands in plain English.
+**#18 `/doctor`** — self-check:
+- Webhook info from Telegram getWebhookInfo
+- DB roundtrip (`select 1`)
+- Main channel test (`getChat` on each `channels` row where role='main')
+- Backup channel test (same for role='backup')
+- Drip cron last-run age (from `bot_settings.drip_last_run`)
+- Auto-delete queue depth
 
-### Phase 1 — Foundation & Management Bot skeleton
-- Enable Lovable Cloud + Telegram connector
-- Database tables: `bot_settings`, `admins`, `channels`, `posts`, `activity_log`
-- Webhook endpoint `/api/public/telegram/webhook` — verifies Telegram secret, dispatches updates
-- Command router with permission checks
-- Bootstrap: first user to send `/start` on the bot becomes super-admin
-- Commands: `/start`, `/help`, `/whoami`, `/addadmin`, `/removeadmin`, `/listadmins`, `/addchannel`, `/removechannel`, `/listchannels`, `/setlog <channel_id>`
-- Activity log channel: every admin action is posted there
-- **Test gate:** you can add channels, add admins, and see log entries.
+**#11 Better `/search` pagination**
+- Extend `search_sessions.hits` to hold all results, add `page` field.
+- Inline keyboard: `⬅ Prev  ·  1/5  ·  Next ➡` alongside checkboxes.
+- Callback data: `search:page:<session_id>:<n>`.
 
-### Phase 2 — Database Channel → Main Channel auto-posting
-- Detect new posts in Database Channel (channel_post updates)
-- Copy/forward to Main Channel(s) with configurable caption template
-- Generate a unique deep-link code per file (`/start abc123` opens the delivery bot)
-- Commands: `/setcaption`, `/settemplate`, `/pausePosting`, `/resumePosting`, `/repost <id>`, `/deletepost <id>`
-- **Test gate:** posts in DB channel appear in main channel with a "Get File" button.
+## Phase 3 — User-facing features + ops
 
-### Phase 3 — Delivery Bot(s) & file delivery
-- Add multiple delivery bots via `/addbot <token>` (stored in DB, webhook auto-registered)
-- Load-balance across delivery bots (round-robin, respects Telegram rate limits)
-- User sends `/start <code>` → delivery bot sends the file
-- Auto-delete delivered files after configurable timer (`/setdeletetimer <minutes>`)
-- Commands: `/addbot`, `/removebot`, `/listbots`, `/setdeletetimer`
-- **Test gate:** click "Get File" button → delivery bot sends you the file → auto-deletes.
+**#13 Favorites**
+- New table `favorites(user_id, post_id, created_at, PRIMARY KEY(user_id, post_id))` with RLS + grants.
+- Add ❤️ button to every published-to-user post; toggle via callback `fav:toggle:<post_id>`.
+- `/favs` command lists their saved posts (paginated).
 
-### Phase 4 — Force-subscribe & verification/monetization gate
-- Force-subscribe: user must join channel(s) before delivery
-- Verification gate: shortener redirect (Linkvertise/AdLinkFly/GPLinks etc.) — user clicks link, completes, comes back with a token → unlocks delivery for N hours
-- Commands: `/addforcesub`, `/removeforcesub`, `/setshortener <provider> <api_key>`, `/setverifyduration <hours>`, `/bypass <user_id>`
-- **Test gate:** non-premium user must join channels + pass shortener before file arrives.
+**#14 Rating**
+- New table `post_ratings(post_id, user_id, rating smallint, created_at, PRIMARY KEY(post_id, user_id))`.
+- 👍 / 👎 buttons on posts, callback `rate:<post_id>:<+1|-1>`.
+- Aggregate score shown to admins in `/find <id>` and `/stats`.
 
-### Phase 5 — Premium tier
-- Premium users skip verification, get instant delivery, no auto-delete
-- Commands: `/addpremium <user_id> <days>`, `/removepremium <user_id>`, `/premiumlist`, `/mystatus`
-- Payment: manual grant by admin (Telegram Stars / crypto / off-platform — you handle payment, run `/addpremium`)
-- **Test gate:** premium users get instant delivery, non-premium go through gate.
+**#16 Health endpoint**
+- New public route `src/routes/api/public/health.ts` returning JSON:
+  ```
+  { ok, webhook_lag_ms, last_backup_age_s, pending_deletions, backup_failures, updated_at }
+  ```
+- No auth (safe read-only aggregates, no PII).
 
-### Phase 6 — Broadcasting & user management
-- `/broadcast <message>` — send to all users (respects rate limits, reports success/fail count)
-- `/broadcastpremium`, `/broadcastfree`
-- `/users` stats, `/banuser`, `/unbanuser`
-- **Test gate:** broadcast a test message, see delivery report.
+**#17 Admin web page at `/admin`**
+- Route `src/routes/_authenticated/admin.tsx` gated by the managed auth layout.
+- Add a `has_role` check via `requireSupabaseAuth` server fn — only Telegram admins linked to a Supabase user can view.
+- Tabs: **Activity log**, **Bot users**, **Posts**, **Backup failures**. Simple sortable tables + search box. No mutations in v1 — read-only viewer.
+- Requires the admin to sign into the web app with the email they register via a new bot command `/linkweb <email>` (sends a magic-link tie-up). If you'd rather skip web auth entirely, I can gate `/admin` behind a shared password in Phase 3 — say the word.
 
-### Phase 7 — Referrals & leaderboard
-- Every user gets a unique referral link
-- Track referrals, reward N days premium after threshold
-- Commands: `/setreferralreward <invites> <days>`, `/leaderboard`, `/myreferrals`
-- **Test gate:** invite a test account, verify reward triggers.
+## Technical notes
 
-### Phase 8 — Search, scheduling & analytics
-- File search: `/search <query>` (indexed on captions/filenames)
-- Scheduled posting: `/schedule <cron> <post_id>`
-- Analytics: `/stats`, `/topfiles`, `/topusers`, daily/weekly auto-summary to log channel
-- **Test gate:** search returns files, scheduled post fires, stats display correctly.
+- All new tables get `GRANT` + RLS + policies in the same migration (`authenticated` + `service_role`, no `anon`).
+- New callbacks (`fav:*`, `rate:*`, `search:page:*`, `confirm:*`) route through the existing `handleSearchCallback` dispatcher — I'll refactor it into a small router if it grows past ~4 prefixes.
+- Every new command registered in `src/lib/bot/commands.ts` with admin/super-admin flags as appropriate.
 
-### Phase 9 — Backups & customization
-- Nightly DB backup posted to a private backup channel (`/setbackupchannel`)
-- Custom welcome message: `/setwelcome`
-- Export/import settings: `/exportsettings`, `/importsettings`
+## Suggested ship order
 
-## Technical details (skip if not interested)
+Phase 1 first (one turn) → verify in preview → Phase 2 (one turn) → Phase 3 (one or two turns depending on how you want #17's auth).
 
-- **Storage:** all bot tokens, channel IDs, settings, files metadata in Postgres. Files themselves live in Telegram (we store `file_id`).
-- **Webhooks:** each bot has its own path `/api/public/telegram/webhook/<bot_id>`, secured by Telegram's `X-Telegram-Bot-Api-Secret-Token` header (secret derived from bot ID + server secret).
-- **Rate limiting:** per-bot queue respecting Telegram's 30 msg/sec global limit.
-- **Modularity:** each feature lives in its own module under `src/lib/bot/features/`. Adding a new feature = adding a file, not editing existing ones.
-- **Idempotency:** every update stored by `update_id` so Telegram retries don't double-process.
+**One decision I need from you before Phase 3:** for the `/admin` web page (#17), do you want (a) full Supabase magic-link auth tied to Telegram admin IDs, or (b) a simpler shared-password gate? (a) is more work but proper; (b) ships in 15 minutes.
 
-## What I need from you at kickoff (Phase 1)
-
-1. Approve this plan
-2. I'll enable Lovable Cloud + connect Telegram — you'll create the **management bot** via [@BotFather](https://t.me/BotFather) and paste the token when the connector prompts
-3. Then send `/start` to your bot to claim super-admin
-
-Ready to start Phase 1?
+Reply "go" to start Phase 1, or tell me to reorder/drop anything.

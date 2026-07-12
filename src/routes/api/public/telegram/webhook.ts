@@ -9,6 +9,9 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         const { getAdminDb } = await import("@/lib/bot/db");
         const { dispatchCommand } = await import("@/lib/bot/commands");
         const { sendMessage } = await import("@/lib/bot/telegram");
+        const { resetSettingsCache } = await import("@/lib/bot/settings");
+        resetSettingsCache();
+
 
 
         const TELEGRAM_API_KEY = process.env.TELEGRAM_API_KEY;
@@ -43,16 +46,25 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return Response.json({ ok: true, inline: true });
         }
 
-        // Callback buttons (e.g. /search multi-select checkboxes).
+        // Callback buttons (multi-select checkboxes, destructive-command confirms, etc.)
         if (update.callback_query) {
+          const data = String(update.callback_query.data ?? "");
           try {
-            const { handleSearchCallback } = await import("@/lib/bot/search");
-            await handleSearchCallback(db, update.callback_query);
+            if (data.startsWith("cnf:")) {
+              // Load command executors (side-effect: registers them).
+              await import("@/lib/bot/commands");
+              const { handleConfirmCallback } = await import("@/lib/bot/confirm");
+              await handleConfirmCallback(db, update.callback_query);
+            } else {
+              const { handleSearchCallback } = await import("@/lib/bot/search");
+              await handleSearchCallback(db, update.callback_query);
+            }
           } catch (e) {
-            console.error("handleSearchCallback failed:", e);
+            console.error("callback handler failed:", e);
           }
           return Response.json({ ok: true, callback: true });
         }
+
 
 
 

@@ -23,6 +23,8 @@ import {
 import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeBackupChannel } from "./backups";
 import { getAutodeleteSeconds, setAutodeleteSeconds, parseDuration, formatDuration } from "./autodelete";
 import { listForceSubChannels, addForceSubChannel, removeForceSubChannel } from "./fsub";
+import { promptConfirm, registerConfirmExecutor } from "./confirm";
+
 
 export interface TgUser {
   id: number;
@@ -793,40 +795,54 @@ register("dripnow", {
 });
 
 register("reset", {
-  help: "/reset [n] — put the last N posted posts back in queue (default 3)",
+  help: "/reset [n] — put the last N posted posts back in queue (default 3, asks to confirm)",
   adminOnly: true,
-  handler: async ({ db, user, args }) => {
+  handler: async ({ chatId, user, args }) => {
     const n = Math.max(1, Math.min(500, Number(args[0]) || 3));
-    const result = await resetPostedPosts(db, n);
-    if (result.error) return `❌ Reset failed: ${result.error}`;
-    await logAction(db, user, "reset_posted", { requested: n, reset: result.reset, codes: result.codes });
-    if (!result.reset) return "ℹ️ No posted posts found to reset.";
-    const codes = result.codes.slice(0, 10).map((code) => `<code>${code}</code>`).join(", ");
-    return `✅ Reset <b>${result.reset}</b> post(s) back to queue.${codes ? `\nCodes: ${codes}` : ""}\nNow run /dripnow ${Math.min(n, result.reset)} to test again.`;
+    await promptConfirm(
+      chatId,
+      user.id,
+      "rst",
+      String(n),
+      `⚠️ <b>Confirm reset</b>\n\nThis will move the last <b>${n}</b> posted post(s) back into the queue.\n\nTap <b>Yes</b> to proceed, or Cancel.`,
+    );
+    return null;
   },
 });
 
+registerConfirmExecutor("rst", async ({ db, userId }, payload) => {
+  const n = Math.max(1, Math.min(500, Number(payload) || 3));
+  const result = await resetPostedPosts(db, n);
+  if (result.error) return `❌ Reset failed: ${result.error}`;
+  await logAction(db, { id: userId }, "reset_posted", { requested: n, reset: result.reset, codes: result.codes });
+  if (!result.reset) return "ℹ️ No posted posts found to reset.";
+  const codes = result.codes.slice(0, 10).map((code) => `<code>${code}</code>`).join(", ");
+  return `✅ Reset <b>${result.reset}</b> post(s) back to queue.${codes ? `\nCodes: ${codes}` : ""}\nNow run /dripnow ${Math.min(n, result.reset)} to test again.`;
+});
+
 register("resetall", {
-  help: "/resetall — put every posted post back in queue (asks for confirmation)",
+  help: "/resetall — put every posted post back in queue (asks to confirm)",
   adminOnly: true,
-  handler: async ({ db, user, args }) => {
-    const confirm = (args[0] ?? "").toLowerCase();
-    if (confirm !== "yes") {
-      return [
-        "⚠️ <b>Confirm reset</b>",
-        "",
-        "This will move <b>every posted post</b> back into the queue.",
-        "",
-        "Reply with <code>/resetall yes</code> to continue, or ignore to cancel.",
-      ].join("\n");
-    }
-    const result = await resetAllPostedPosts(db);
-    if (result.error) return `❌ Reset all failed: ${result.error}`;
-    await logAction(db, user, "reset_all_posted", { reset: result.reset });
-    if (!result.reset) return "ℹ️ No posted posts found to reset.";
-    return `✅ Reset <b>${result.reset}</b> posted post(s) back to queue.\nNow run /queue or /dripnow 3.`;
+  handler: async ({ chatId, user }) => {
+    await promptConfirm(
+      chatId,
+      user.id,
+      "rsa",
+      "",
+      "⚠️ <b>Confirm reset ALL</b>\n\nThis will move <b>every posted post</b> back into the queue. This cannot be undone.\n\nTap <b>Yes</b> to proceed, or Cancel.",
+    );
+    return null;
   },
 });
+
+registerConfirmExecutor("rsa", async ({ db, userId }) => {
+  const result = await resetAllPostedPosts(db);
+  if (result.error) return `❌ Reset all failed: ${result.error}`;
+  await logAction(db, { id: userId }, "reset_all_posted", { reset: result.reset });
+  if (!result.reset) return "ℹ️ No posted posts found to reset.";
+  return `✅ Reset <b>${result.reset}</b> posted post(s) back to queue.\nNow run /queue or /dripnow 3.`;
+});
+
 
 function parseToggle(arg: string | undefined): boolean | null {
   if (arg === undefined) return null;
@@ -1047,18 +1063,32 @@ register("scandatabase", {
 });
 
 register("removebackup", {
-  help: "/removebackup &lt;chat_id&gt; — unregister a backup channel and clear its mirror log",
+  help: "/removebackup &lt;chat_id&gt; — unregister a backup channel and clear its mirror log (asks to confirm)",
   adminOnly: true,
-  handler: async ({ db, user, args }) => {
+  handler: async ({ chatId, user, args }) => {
     const cid = Number(args[0]);
     if (!cid) return "Usage: /removebackup &lt;chat_id&gt;";
-    const r = await removeBackupChannel(db, cid);
-    if (r.error) return `❌ ${r.error}`;
-    if (!r.removed) return `ℹ️ <code>${cid}</code> is not a registered backup channel.`;
-    await logAction(db, user, "remove_backup_channel", { chatId: cid, clearedCopies: r.clearedCopies });
-    return `✅ Backup channel <code>${cid}</code> removed.\nCleared <b>${r.clearedCopies}</b> mirror-tracking row(s).`;
+    await promptConfirm(
+      chatId,
+      user.id,
+      "rmb",
+      String(cid),
+      `⚠️ <b>Confirm remove backup</b>\n\nThis will unregister backup channel <code>${cid}</code> and delete all its mirror-tracking rows.\n\nTap <b>Yes</b> to proceed, or Cancel.`,
+    );
+    return null;
   },
 });
+
+registerConfirmExecutor("rmb", async ({ db, userId }, payload) => {
+  const cid = Number(payload);
+  if (!cid) return "❌ Invalid channel id.";
+  const r = await removeBackupChannel(db, cid);
+  if (r.error) return `❌ ${r.error}`;
+  if (!r.removed) return `ℹ️ <code>${cid}</code> is not a registered backup channel.`;
+  await logAction(db, { id: userId }, "remove_backup_channel", { chatId: cid, clearedCopies: r.clearedCopies });
+  return `✅ Backup channel <code>${cid}</code> removed.\nCleared <b>${r.clearedCopies}</b> mirror-tracking row(s).`;
+});
+
 
 register("resetbackup", {
   help: "/resetbackup [chat_id] — clear mirror log so /backup starts from post 1 (all channels if no id)",
