@@ -9,6 +9,9 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         const { getAdminDb } = await import("@/lib/bot/db");
         const { dispatchCommand } = await import("@/lib/bot/commands");
         const { sendMessage } = await import("@/lib/bot/telegram");
+        const { resetSettingsCache } = await import("@/lib/bot/settings");
+        resetSettingsCache();
+
 
 
         const TELEGRAM_API_KEY = process.env.TELEGRAM_API_KEY;
