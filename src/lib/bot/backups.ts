@@ -3,12 +3,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { copyMessage, forwardMessage, sendPhoto, sendVideo, sendDocument, sendAudio } from "./telegram";
+import { getSettingText } from "./settings";
 
-async function getSettingText(db: SupabaseClient, key: string): Promise<string> {
-  const { data } = await db.from("bot_settings").select("value").eq("key", key).maybeSingle();
-  const v = (data?.value as { text?: string } | null) ?? null;
-  return (v?.text ?? "").trim();
-}
 
 function appendExtra(base: string, extra: string): string {
   if (!extra) return base;
