@@ -220,6 +220,60 @@ export type Database = {
         }
         Relationships: []
       }
+      deleted_posts: {
+        Row: {
+          caption: string | null
+          code: string
+          created_by: number | null
+          deleted_at: string
+          deleted_by: number | null
+          extra_files: Json
+          fetch_count: number
+          id: number
+          media: Json
+          media_group_id: string | null
+          original_created_at: string | null
+          original_post_id: number
+          original_posted_at: string | null
+          source_chat_id: number
+          source_message_id: number
+        }
+        Insert: {
+          caption?: string | null
+          code: string
+          created_by?: number | null
+          deleted_at?: string
+          deleted_by?: number | null
+          extra_files?: Json
+          fetch_count?: number
+          id?: number
+          media?: Json
+          media_group_id?: string | null
+          original_created_at?: string | null
+          original_post_id: number
+          original_posted_at?: string | null
+          source_chat_id: number
+          source_message_id: number
+        }
+        Update: {
+          caption?: string | null
+          code?: string
+          created_by?: number | null
+          deleted_at?: string
+          deleted_by?: number | null
+          extra_files?: Json
+          fetch_count?: number
+          id?: number
+          media?: Json
+          media_group_id?: string | null
+          original_created_at?: string | null
+          original_post_id?: number
+          original_posted_at?: string | null
+          source_chat_id?: number
+          source_message_id?: number
+        }
+        Relationships: []
+      }
       fsub_satisfied: {
         Row: {
           channel_chat_id: number
