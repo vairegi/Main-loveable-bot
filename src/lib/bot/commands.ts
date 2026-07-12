@@ -795,40 +795,54 @@ register("dripnow", {
 });
 
 register("reset", {
-  help: "/reset [n] — put the last N posted posts back in queue (default 3)",
+  help: "/reset [n] — put the last N posted posts back in queue (default 3, asks to confirm)",
   adminOnly: true,
-  handler: async ({ db, user, args }) => {
+  handler: async ({ chatId, user, args }) => {
     const n = Math.max(1, Math.min(500, Number(args[0]) || 3));
-    const result = await resetPostedPosts(db, n);
-    if (result.error) return `❌ Reset failed: ${result.error}`;
-    await logAction(db, user, "reset_posted", { requested: n, reset: result.reset, codes: result.codes });
-    if (!result.reset) return "ℹ️ No posted posts found to reset.";
-    const codes = result.codes.slice(0, 10).map((code) => `<code>${code}</code>`).join(", ");
-    return `✅ Reset <b>${result.reset}</b> post(s) back to queue.${codes ? `\nCodes: ${codes}` : ""}\nNow run /dripnow ${Math.min(n, result.reset)} to test again.`;
+    await promptConfirm(
+      chatId,
+      user.id,
+      "rst",
+      String(n),
+      `⚠️ <b>Confirm reset</b>\n\nThis will move the last <b>${n}</b> posted post(s) back into the queue.\n\nTap <b>Yes</b> to proceed, or Cancel.`,
+    );
+    return null;
   },
 });
 
+registerConfirmExecutor("rst", async ({ db, userId }, payload) => {
+  const n = Math.max(1, Math.min(500, Number(payload) || 3));
+  const result = await resetPostedPosts(db, n);
+  if (result.error) return `❌ Reset failed: ${result.error}`;
+  await logAction(db, { id: userId }, "reset_posted", { requested: n, reset: result.reset, codes: result.codes });
+  if (!result.reset) return "ℹ️ No posted posts found to reset.";
+  const codes = result.codes.slice(0, 10).map((code) => `<code>${code}</code>`).join(", ");
+  return `✅ Reset <b>${result.reset}</b> post(s) back to queue.${codes ? `\nCodes: ${codes}` : ""}\nNow run /dripnow ${Math.min(n, result.reset)} to test again.`;
+});
+
 register("resetall", {
-  help: "/resetall — put every posted post back in queue (asks for confirmation)",
+  help: "/resetall — put every posted post back in queue (asks to confirm)",
   adminOnly: true,
-  handler: async ({ db, user, args }) => {
-    const confirm = (args[0] ?? "").toLowerCase();
-    if (confirm !== "yes") {
-      return [
-        "⚠️ <b>Confirm reset</b>",
-        "",
-        "This will move <b>every posted post</b> back into the queue.",
-        "",
-        "Reply with <code>/resetall yes</code> to continue, or ignore to cancel.",
-      ].join("\n");
-    }
-    const result = await resetAllPostedPosts(db);
-    if (result.error) return `❌ Reset all failed: ${result.error}`;
-    await logAction(db, user, "reset_all_posted", { reset: result.reset });
-    if (!result.reset) return "ℹ️ No posted posts found to reset.";
-    return `✅ Reset <b>${result.reset}</b> posted post(s) back to queue.\nNow run /queue or /dripnow 3.`;
+  handler: async ({ chatId, user }) => {
+    await promptConfirm(
+      chatId,
+      user.id,
+      "rsa",
+      "",
+      "⚠️ <b>Confirm reset ALL</b>\n\nThis will move <b>every posted post</b> back into the queue. This cannot be undone.\n\nTap <b>Yes</b> to proceed, or Cancel.",
+    );
+    return null;
   },
 });
+
+registerConfirmExecutor("rsa", async ({ db, userId }) => {
+  const result = await resetAllPostedPosts(db);
+  if (result.error) return `❌ Reset all failed: ${result.error}`;
+  await logAction(db, { id: userId }, "reset_all_posted", { reset: result.reset });
+  if (!result.reset) return "ℹ️ No posted posts found to reset.";
+  return `✅ Reset <b>${result.reset}</b> posted post(s) back to queue.\nNow run /queue or /dripnow 3.`;
+});
+
 
 function parseToggle(arg: string | undefined): boolean | null {
   if (arg === undefined) return null;
