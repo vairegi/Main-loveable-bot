@@ -187,6 +187,8 @@ register("help", {
       { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup", "pausebackup", "resumebackup", "backupstatus"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub", "fsublist", "fsubremove"] },
       { title: "📊 Users & moderation", cmds: ["stats", "duplicates", "doctor", "broadcast", "ban", "unban", "banlist"] },
+      { title: "🌐 Web admin", cmds: ["linkweb", "setweburl"] },
+      { title: "⭐ User features", cmds: ["favs"] },
     ];
 
 
