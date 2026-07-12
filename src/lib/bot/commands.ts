@@ -8,6 +8,8 @@ import { sendMessage, editMessageText, forwardMessage, tg } from "./telegram";
 import {
   deliverFileByCode,
   deletePostByCode,
+  undeletePostByCode,
+  listDeletedPosts,
   repostByCode,
   postByLink,
   getSchedule,
