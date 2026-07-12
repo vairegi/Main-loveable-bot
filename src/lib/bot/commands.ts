@@ -1381,27 +1381,31 @@ register("duplicates", {
     const capDupes = [...byCaption.entries()].filter(([, v]) => v.length > 1).sort((a, b) => b[1].length - a[1].length).slice(0, 10);
     const fidDupes = [...byFileId.entries()].filter(([, v]) => v.length > 1).sort((a, b) => b[1].length - a[1].length).slice(0, 10);
 
+    const { getBotUsername } = await import("./telegram");
+    const botUsername = await getBotUsername();
+    const linkCode = (c: string) => `<a href="https://t.me/${botUsername}?start=get_${c}"><code>${c}</code></a>`;
+
     const lines: string[] = [`<b>🔁 Duplicates</b> (scanned ${scanned} posts)`];
 
     if (capDupes.length) {
       lines.push("", "<b>By caption</b>");
       for (const [key, items] of capDupes) {
         const preview = key.slice(0, 40);
-        const codes = items.slice(0, 8).map((it) => `<code>${it.code}</code>`).join(" ");
+        const codes = items.slice(0, 8).map((it) => linkCode(it.code)).join(" ");
         lines.push(`• ${items.length}× "${escapeHtml(preview)}" — ${codes}`);
       }
     }
     if (fidDupes.length) {
       lines.push("", "<b>By media file</b>");
       for (const [fuid, items] of fidDupes) {
-        const codes = items.slice(0, 8).map((it) => `<code>${it.code}</code>`).join(" ");
+        const codes = items.slice(0, 8).map((it) => linkCode(it.code)).join(" ");
         lines.push(`• ${items.length}× <code>${escapeHtml(fuid.slice(0, 20))}…</code> — ${codes}`);
       }
     }
     if (capDupes.length === 0 && fidDupes.length === 0) {
       lines.push("", "✅ No duplicates found.");
     } else {
-      lines.push("", "<i>Use /deletepost &lt;code&gt; to remove a duplicate.</i>");
+      lines.push("", "<i>Tap a code to preview it, or use /deletepost &lt;code&gt; to remove a duplicate.</i>");
     }
     return lines.join("\n");
   },
