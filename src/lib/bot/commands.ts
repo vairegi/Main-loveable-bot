@@ -511,16 +511,43 @@ register("mpost", {
 
 
 register("deletepost", {
-  help: "/deletepost &lt;code|#N&gt; — delete a post by code or queue position (e.g. /deletepost 15)",
+  help: "/deletepost &lt;code|#N&gt; — delete a post by code or queue position (archived, restore with /undelete)",
   adminOnly: true,
   handler: async ({ db, user, args }) => {
     const arg = args[0];
     if (!arg) return "Usage: /deletepost &lt;code&gt; or /deletepost &lt;queue-position&gt;";
     const { code, error } = await resolveCodeOrPosition(db, arg);
     if (error || !code) return error ?? "❌ Could not resolve post.";
-    const result = await deletePostByCode(db, code);
+    const result = await deletePostByCode(db, code, user.id);
     await logAction(db, user, "delete_post", { code, arg });
     return result;
+  },
+});
+
+register("undelete", {
+  help: "/undelete &lt;code&gt; — restore a previously deleted post (re-enters the queue for reposting)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const arg = args[0];
+    if (!arg) return "Usage: /undelete &lt;code&gt;";
+    const result = await undeletePostByCode(db, arg);
+    await logAction(db, user, "undelete_post", { code: arg });
+    return result;
+  },
+});
+
+register("deletedposts", {
+  help: "/deletedposts — list recently deleted posts that can still be restored",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const rows = await listDeletedPosts(db, 25);
+    if (!rows.length) return "🗑️ No archived deleted posts.";
+    const lines = rows.map((r) => {
+      const when = new Date(r.deleted_at).toISOString().replace("T", " ").slice(0, 16);
+      const preview = (r.caption ?? "").replace(/\s+/g, " ").slice(0, 60);
+      return `• <code>${r.code}</code> — ${when}${preview ? ` — ${preview}` : ""}`;
+    });
+    return `🗑️ <b>Recently deleted</b> (restore with /undelete &lt;code&gt;):\n${lines.join("\n")}`;
   },
 });
 
