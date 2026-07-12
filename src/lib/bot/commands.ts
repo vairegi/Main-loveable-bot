@@ -1222,21 +1222,40 @@ register("fsubremove", {
 // ---------------- Stats / Broadcast / Moderation ----------------
 
 register("stats", {
-  help: "/stats — bot health: users, fetches, top files, backup lag, queue",
+  help: "/stats — bot health: users, posting cadence, top files, backup lag, queue",
   adminOnly: true,
   handler: async ({ db }) => {
-    const [{ count: postCount }, { count: userCount }, { count: queueSize }, { count: bannedCount }] = await Promise.all([
+    const now = Date.now();
+    const dayAgo = new Date(now - 86_400_000).toISOString();
+    const weekAgo = new Date(now - 7 * 86_400_000).toISOString();
+    const monthAgo = new Date(now - 30 * 86_400_000).toISOString();
+    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+
+    const [
+      { count: postCount },
+      { count: userCount },
+      { count: queueSize },
+      { count: bannedCount },
+      { count: dau },
+      { count: wau },
+      { count: mau },
+      { count: postedToday },
+      { count: posted7d },
+      { count: autodeleteQueue },
+      { count: failedBackups },
+    ] = await Promise.all([
       db.from("posts").select("*", { count: "exact", head: true }),
       db.from("bot_users").select("*", { count: "exact", head: true }),
       db.from("posts").select("*", { count: "exact", head: true }).is("posted_at", null),
       db.from("bot_users").select("*", { count: "exact", head: true }).eq("banned", true),
+      db.from("bot_users").select("*", { count: "exact", head: true }).gte("last_seen", dayAgo),
+      db.from("bot_users").select("*", { count: "exact", head: true }).gte("last_seen", weekAgo),
+      db.from("bot_users").select("*", { count: "exact", head: true }).gte("last_seen", monthAgo),
+      db.from("posts").select("*", { count: "exact", head: true }).gte("posted_at", startOfToday),
+      db.from("posts").select("*", { count: "exact", head: true }).gte("posted_at", weekAgo),
+      db.from("pending_deletions").select("*", { count: "exact", head: true }),
+      db.from("backup_failures").select("*", { count: "exact", head: true }),
     ]);
-
-    const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
-    const { count: activeDay } = await db
-      .from("bot_users")
-      .select("*", { count: "exact", head: true })
-      .gte("last_seen", dayAgo);
 
     const { data: topFiles } = await db
       .from("posts")
@@ -1253,23 +1272,49 @@ register("stats", {
           .select("*", { count: "exact", head: true })
           .eq("backup_chat_id", ch.telegram_chat_id);
         const lag = (postCount ?? 0) - (mirrored ?? 0);
-        backupLines.push(`• <code>${ch.telegram_chat_id}</code> — ${mirrored ?? 0}/${postCount} (${lag} behind)`);
+        // Age of the oldest un-mirrored post for this channel.
+        let ageStr = "";
+        if (lag > 0) {
+          const { data: mirroredRows } = await db
+            .from("backup_copies")
+            .select("post_id")
+            .eq("backup_chat_id", ch.telegram_chat_id);
+          const mirroredIds = new Set((mirroredRows ?? []).map((r) => Number(r.post_id)));
+          // Grab the oldest 200 posts and find the first not-yet-mirrored.
+          const { data: oldest } = await db
+            .from("posts")
+            .select("id, created_at")
+            .order("id", { ascending: true })
+            .limit(500);
+          const first = (oldest ?? []).find((p) => !mirroredIds.has(Number(p.id)));
+          if (first?.created_at) {
+            const ageMs = now - new Date(first.created_at).getTime();
+            ageStr = ` · oldest lag ${formatAge(ageMs)}`;
+          }
+        }
+        const label = ch.title ? `<b>${escapeHtml(ch.title)}</b> ` : "";
+        backupLines.push(`• ${label}<code>${ch.telegram_chat_id}</code> — ${mirrored ?? 0}/${postCount} (${lag} behind${ageStr})`);
       }
     }
-
-    const { count: autodeleteQueue } = await db.from("pending_deletions").select("*", { count: "exact", head: true });
 
     const topLines = (topFiles ?? [])
       .filter((p) => (p.fetch_count ?? 0) > 0)
       .slice(0, 10)
-      .map((p, i) => `${i + 1}. <code>${p.code}</code> — ${p.fetch_count}× — ${(p.caption ?? "").slice(0, 30) || "(no caption)"}`);
+      .map((p, i) => `${i + 1}. <code>${p.code}</code> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`);
 
     return [
       "<b>📊 Bot stats</b>",
       "",
-      `Posts: <b>${postCount ?? 0}</b> (queue: ${queueSize ?? 0})`,
-      `Users: <b>${userCount ?? 0}</b> total, ${activeDay ?? 0} active last 24h, ${bannedCount ?? 0} banned`,
-      `Autodelete queue: <b>${autodeleteQueue ?? 0}</b> pending`,
+      `<b>Posts:</b> ${postCount ?? 0} (queue: ${queueSize ?? 0})`,
+      `<b>Published:</b> ${postedToday ?? 0} today · ${posted7d ?? 0} in last 7d`,
+      "",
+      "<b>👥 Users</b>",
+      `Total: <b>${userCount ?? 0}</b> · Banned: ${bannedCount ?? 0}`,
+      `Active: <b>${dau ?? 0}</b> DAU · ${wau ?? 0} WAU · ${mau ?? 0} MAU`,
+      "",
+      `<b>⏱️ Queues</b>`,
+      `Autodelete pending: ${autodeleteQueue ?? 0}`,
+      `Backup failures logged: ${failedBackups ?? 0}`,
       "",
       "<b>💾 Backup lag</b>",
       backupLines.length ? backupLines.join("\n") : "(no backup channels)",
@@ -1279,6 +1324,177 @@ register("stats", {
     ].join("\n");
   },
 });
+
+function formatAge(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
+}
+
+// ---------------- /duplicates ----------------
+register("duplicates", {
+  help: "/duplicates — list posts that share a caption or media file (admins)",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    // Load all posts in chunks (id keyset). Keep memory-only fields.
+    const byCaption = new Map<string, { code: string; id: number }[]>();
+    const byFileId = new Map<string, { code: string; id: number }[]>();
+
+    let lastId = 0;
+    const CHUNK = 1000;
+    let scanned = 0;
+    while (true) {
+      const { data, error } = await db
+        .from("posts")
+        .select("id, code, caption, media")
+        .gt("id", lastId)
+        .order("id", { ascending: true })
+        .limit(CHUNK);
+      if (error) return `❌ ${error.message}`;
+      if (!data?.length) break;
+      for (const p of data) {
+        scanned++;
+        const capKey = (p.caption ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+        if (capKey.length >= 8) {
+          if (!byCaption.has(capKey)) byCaption.set(capKey, []);
+          byCaption.get(capKey)!.push({ code: p.code, id: Number(p.id) });
+        }
+        const media = (p.media ?? {}) as { file_unique_id?: string };
+        const fuid = media?.file_unique_id;
+        if (fuid) {
+          if (!byFileId.has(fuid)) byFileId.set(fuid, []);
+          byFileId.get(fuid)!.push({ code: p.code, id: Number(p.id) });
+        }
+      }
+      lastId = Number(data[data.length - 1].id);
+      if (data.length < CHUNK) break;
+    }
+
+    const capDupes = [...byCaption.entries()].filter(([, v]) => v.length > 1).sort((a, b) => b[1].length - a[1].length).slice(0, 10);
+    const fidDupes = [...byFileId.entries()].filter(([, v]) => v.length > 1).sort((a, b) => b[1].length - a[1].length).slice(0, 10);
+
+    const lines: string[] = [`<b>🔁 Duplicates</b> (scanned ${scanned} posts)`];
+
+    if (capDupes.length) {
+      lines.push("", "<b>By caption</b>");
+      for (const [key, items] of capDupes) {
+        const preview = key.slice(0, 40);
+        const codes = items.slice(0, 8).map((it) => `<code>${it.code}</code>`).join(" ");
+        lines.push(`• ${items.length}× "${escapeHtml(preview)}" — ${codes}`);
+      }
+    }
+    if (fidDupes.length) {
+      lines.push("", "<b>By media file</b>");
+      for (const [fuid, items] of fidDupes) {
+        const codes = items.slice(0, 8).map((it) => `<code>${it.code}</code>`).join(" ");
+        lines.push(`• ${items.length}× <code>${escapeHtml(fuid.slice(0, 20))}…</code> — ${codes}`);
+      }
+    }
+    if (capDupes.length === 0 && fidDupes.length === 0) {
+      lines.push("", "✅ No duplicates found.");
+    } else {
+      lines.push("", "<i>Use /deletepost &lt;code&gt; to remove a duplicate.</i>");
+    }
+    return lines.join("\n");
+  },
+});
+
+// ---------------- /doctor ----------------
+register("doctor", {
+  help: "/doctor — self-check webhook, DB, channels, drip cron",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const check = async <T,>(fn: () => Promise<T>): Promise<{ ok: boolean; detail: string }> => {
+      try {
+        const r = await fn();
+        return { ok: true, detail: typeof r === "string" ? r : "ok" };
+      } catch (e: any) {
+        return { ok: false, detail: e?.message ?? "error" };
+      }
+    };
+
+    const results: { name: string; ok: boolean; detail: string }[] = [];
+
+    // 1. Webhook info
+    results.push({
+      name: "Telegram webhook",
+      ...(await check(async () => {
+        const info: any = await tg("getWebhookInfo");
+        const url = info?.url ?? "(unset)";
+        const pending = info?.pending_update_count ?? 0;
+        const lastErr = info?.last_error_message ? ` · last error: ${info.last_error_message}` : "";
+        return `pending ${pending} · ${url}${lastErr}`;
+      })),
+    });
+
+    // 2. DB roundtrip
+    results.push({
+      name: "Database",
+      ...(await check(async () => {
+        const { error } = await db.from("bot_settings").select("key", { head: true, count: "exact" }).limit(1);
+        if (error) throw new Error(error.message);
+        return "reachable";
+      })),
+    });
+
+    // 3. Channels — getChat on main + backup
+    const { data: chans } = await db.from("channels").select("telegram_chat_id, title, role").in("role", ["main", "backup", "database", "log"]);
+    for (const c of chans ?? []) {
+      results.push({
+        name: `${c.role} · ${c.title ?? c.telegram_chat_id}`,
+        ...(await check(async () => {
+          const chat: any = await tg("getChat", { chat_id: c.telegram_chat_id });
+          return chat?.title ?? chat?.username ?? "reachable";
+        })),
+      });
+    }
+
+    // 4. Drip cron last run age
+    results.push({
+      name: "Drip cron",
+      ...(await check(async () => {
+        const { data } = await db.from("bot_settings").select("value, updated_at").eq("key", "drip_last_run").maybeSingle();
+        const ts = (data?.value as any)?.at ?? data?.updated_at;
+        if (!ts) return "never run";
+        const age = Date.now() - new Date(ts).getTime();
+        const marker = age > 6 * 3600_000 ? "⚠️ " : "";
+        return `${marker}last ran ${formatAge(age)} ago`;
+      })),
+    });
+
+    // 5. Autodelete queue
+    results.push({
+      name: "Autodelete queue",
+      ...(await check(async () => {
+        const { count } = await db.from("pending_deletions").select("*", { count: "exact", head: true });
+        return `${count ?? 0} pending`;
+      })),
+    });
+
+    // 6. Backup failures
+    results.push({
+      name: "Backup failures",
+      ...(await check(async () => {
+        const { count } = await db.from("backup_failures").select("*", { count: "exact", head: true });
+        return `${count ?? 0} rows`;
+      })),
+    });
+
+    const lines = ["<b>🩺 Doctor report</b>", ""];
+    for (const r of results) {
+      lines.push(`${r.ok ? "✅" : "❌"} <b>${escapeHtml(r.name)}</b> — ${escapeHtml(r.detail).slice(0, 200)}`);
+    }
+    const failing = results.filter((r) => !r.ok).length;
+    lines.push("", failing === 0 ? "<i>All checks passed.</i>" : `<i>${failing} check(s) failing.</i>`);
+    return lines.join("\n");
+  },
+});
+
 
 register("broadcast", {
   help: "/broadcast &lt;text&gt; — send text to every user (formatting supported). Or reply to any message (including a forwarded channel post) with /broadcast to forward it to everyone, preserving the original channel tag.",
