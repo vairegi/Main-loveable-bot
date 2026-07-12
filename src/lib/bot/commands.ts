@@ -23,6 +23,8 @@ import {
 import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeBackupChannel } from "./backups";
 import { getAutodeleteSeconds, setAutodeleteSeconds, parseDuration, formatDuration } from "./autodelete";
 import { listForceSubChannels, addForceSubChannel, removeForceSubChannel } from "./fsub";
+import { promptConfirm, registerConfirmExecutor } from "./confirm";
+
 
 export interface TgUser {
   id: number;
