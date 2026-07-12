@@ -393,14 +393,13 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
     try {
       const { buildReactionKeyboard, getReactionState } = await import("./reactions");
       const state = await getReactionState(db, post.id, userChatId);
+      const botUsername = await getBotUsername();
       const kb = buildReactionKeyboard(post.id, botUsername, post.code, state);
-      const rMsg = await sendMessage(
+      await sendMessage(
         userChatId,
         `<i>Rate this post</i>${state.score ? ` — score <b>${state.score > 0 ? "+" : ""}${state.score}</b>` : ""}`,
         { reply_markup: kb },
       );
-      // Note: don't auto-delete the reaction message so users can react later.
-      void rMsg;
     } catch (e) {
       console.error("reaction keyboard failed:", e);
     }
