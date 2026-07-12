@@ -389,6 +389,21 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
       await queueDeletion(db, userChatId, sentIds, autodeleteSeconds);
     }
 
+    // Reaction buttons (❤️ save · 👍 · 👎)
+    try {
+      const { buildReactionKeyboard, getReactionState } = await import("./reactions");
+      const state = await getReactionState(db, post.id, userChatId);
+      const botUsername = await getBotUsername();
+      const kb = buildReactionKeyboard(post.id, botUsername, post.code, state);
+      await sendMessage(
+        userChatId,
+        `<i>Rate this post</i>${state.score ? ` — score <b>${state.score > 0 ? "+" : ""}${state.score}</b>` : ""}`,
+        { reply_markup: kb },
+      );
+    } catch (e) {
+      console.error("reaction keyboard failed:", e);
+    }
+
     // Bookkeeping: bump per-post + per-user fetch counters (best-effort).
     try {
       await db.from("posts").update({ fetch_count: (post.fetch_count ?? 0) + 1 }).eq("id", post.id);

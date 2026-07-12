@@ -274,6 +274,32 @@ export type Database = {
         }
         Relationships: []
       }
+      favorites: {
+        Row: {
+          created_at: string
+          post_id: number
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          post_id: number
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          post_id?: number
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "favorites_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fsub_satisfied: {
         Row: {
           channel_chat_id: number
@@ -341,6 +367,35 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "post_copies_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      post_ratings: {
+        Row: {
+          created_at: string
+          post_id: number
+          rating: number
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          post_id: number
+          rating: number
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          post_id?: number
+          rating?: number
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_ratings_post_id_fkey"
             columns: ["post_id"]
             isOneToOne: false
             referencedRelation: "posts"
@@ -423,6 +478,33 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_link_tokens: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          telegram_user_id: number
+          telegram_username: string | null
+          token: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          telegram_user_id: number
+          telegram_username?: string | null
+          token: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          telegram_user_id?: number
+          telegram_username?: string | null
+          token?: string
+        }
+        Relationships: []
+      }
       telegram_updates: {
         Row: {
           received_at: string
@@ -435,6 +517,45 @@ export type Database = {
         Update: {
           received_at?: string
           update_id?: number
+        }
+        Relationships: []
+      }
+      telegram_web_links: {
+        Row: {
+          auth_user_id: string
+          linked_at: string
+          telegram_user_id: number
+        }
+        Insert: {
+          auth_user_id: string
+          linked_at?: string
+          telegram_user_id: number
+        }
+        Update: {
+          auth_user_id?: string
+          linked_at?: string
+          telegram_user_id?: number
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
         }
         Relationships: []
       }
@@ -465,10 +586,17 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       is_telegram_bot_request: { Args: never; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -595,6 +723,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const

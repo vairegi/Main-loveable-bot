@@ -51,10 +51,12 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           const data = String(update.callback_query.data ?? "");
           try {
             if (data.startsWith("cnf:")) {
-              // Load command executors (side-effect: registers them).
               await import("@/lib/bot/commands");
               const { handleConfirmCallback } = await import("@/lib/bot/confirm");
               await handleConfirmCallback(db, update.callback_query);
+            } else if (data.startsWith("fav:") || data.startsWith("rate:")) {
+              const { handleReactionCallback } = await import("@/lib/bot/reactions");
+              await handleReactionCallback(db, update.callback_query);
             } else {
               const { handleSearchCallback } = await import("@/lib/bot/search");
               await handleSearchCallback(db, update.callback_query);

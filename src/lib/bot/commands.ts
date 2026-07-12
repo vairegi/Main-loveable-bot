@@ -187,6 +187,8 @@ register("help", {
       { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup", "pausebackup", "resumebackup", "backupstatus"] },
       { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub", "fsublist", "fsubremove"] },
       { title: "📊 Users & moderation", cmds: ["stats", "duplicates", "doctor", "broadcast", "ban", "unban", "banlist"] },
+      { title: "🌐 Web admin", cmds: ["linkweb", "setweburl"] },
+      { title: "⭐ User features", cmds: ["favs"] },
     ];
 
 
@@ -1691,6 +1693,89 @@ register("search", {
 
 
 
+// ---------------- Phase 3: favorites & web admin linking ----------------
+
+register("favs", {
+  help: "/favs — list posts you've saved with ❤️",
+  handler: async ({ db, user }) => {
+    const { data: favs } = await db
+      .from("favorites")
+      .select("post_id, created_at, posts(id, code, caption)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (!favs?.length) return "🤍 You have no favorites yet. Tap the <b>Save</b> button on a delivered file to add one.";
+
+    const { getBotUsername } = await import("./telegram");
+    const botUsername = await getBotUsername();
+    const lines = ["<b>❤️ Your favorites</b>", ""];
+    for (const f of favs as any[]) {
+      const p = f.posts;
+      if (!p) continue;
+      const title = (p.caption ?? "").split("\n")[0].slice(0, 60) || `Post #${p.id}`;
+      lines.push(`• <a href="https://t.me/${botUsername}?start=get_${p.code}">${escapeHtml(title)}</a>`);
+    }
+    return lines.join("\n");
+  },
+});
+
+register("linkweb", {
+  help: "/linkweb — get a one-time link to sign into the admin web page",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    const token = randomBytes(16).toString("base64url");
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+    const { error } = await db.from("telegram_link_tokens").insert({
+      token,
+      telegram_user_id: user.id,
+      telegram_username: user.username ?? null,
+      expires_at: expiresAt,
+    });
+    if (error) return `❌ ${error.message}`;
+
+    const { data: setting } = await db
+      .from("bot_settings")
+      .select("value")
+      .eq("key", "web_app_url")
+      .maybeSingle();
+    const baseUrl = (setting?.value as any)?.url
+      ?? "https://project--63054181-241c-4222-a8c4-6a324a5c7656.lovable.app";
+    const link = `${baseUrl}/link/${token}`;
+
+    await logAction(db, user, "linkweb_token_issued");
+    return [
+      "🔗 <b>Web admin sign-in link</b>",
+      "",
+      `<a href="${link}">${link}</a>`,
+      "",
+      "1. Open the link above",
+      "2. Sign up or sign in with your email + password",
+      "3. Your Telegram account is linked automatically",
+      "",
+      "<i>Link expires in 30 minutes and can only be used once.</i>",
+    ].join("\n");
+  },
+});
+
+register("setweburl", {
+  help: "/setweburl &lt;url&gt; — set the base URL used by /linkweb (super-admin)",
+  superOnly: true,
+  handler: async ({ db, user, args }) => {
+    const url = args[0];
+    if (!url || !/^https?:\/\//i.test(url)) return "Usage: /setweburl https://your.app";
+    const clean = url.replace(/\/$/, "");
+    const { error } = await db.from("bot_settings").upsert({
+      key: "web_app_url",
+      value: { url: clean },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return `❌ ${error.message}`;
+    await logAction(db, user, "set_web_app_url", { url: clean });
+    return `✅ Web app URL set to <code>${clean}</code>`;
+  },
+});
 
 
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
