@@ -1063,18 +1063,32 @@ register("scandatabase", {
 });
 
 register("removebackup", {
-  help: "/removebackup &lt;chat_id&gt; — unregister a backup channel and clear its mirror log",
+  help: "/removebackup &lt;chat_id&gt; — unregister a backup channel and clear its mirror log (asks to confirm)",
   adminOnly: true,
-  handler: async ({ db, user, args }) => {
+  handler: async ({ chatId, user, args }) => {
     const cid = Number(args[0]);
     if (!cid) return "Usage: /removebackup &lt;chat_id&gt;";
-    const r = await removeBackupChannel(db, cid);
-    if (r.error) return `❌ ${r.error}`;
-    if (!r.removed) return `ℹ️ <code>${cid}</code> is not a registered backup channel.`;
-    await logAction(db, user, "remove_backup_channel", { chatId: cid, clearedCopies: r.clearedCopies });
-    return `✅ Backup channel <code>${cid}</code> removed.\nCleared <b>${r.clearedCopies}</b> mirror-tracking row(s).`;
+    await promptConfirm(
+      chatId,
+      user.id,
+      "rmb",
+      String(cid),
+      `⚠️ <b>Confirm remove backup</b>\n\nThis will unregister backup channel <code>${cid}</code> and delete all its mirror-tracking rows.\n\nTap <b>Yes</b> to proceed, or Cancel.`,
+    );
+    return null;
   },
 });
+
+registerConfirmExecutor("rmb", async ({ db, userId }, payload) => {
+  const cid = Number(payload);
+  if (!cid) return "❌ Invalid channel id.";
+  const r = await removeBackupChannel(db, cid);
+  if (r.error) return `❌ ${r.error}`;
+  if (!r.removed) return `ℹ️ <code>${cid}</code> is not a registered backup channel.`;
+  await logAction(db, { id: userId }, "remove_backup_channel", { chatId: cid, clearedCopies: r.clearedCopies });
+  return `✅ Backup channel <code>${cid}</code> removed.\nCleared <b>${r.clearedCopies}</b> mirror-tracking row(s).`;
+});
+
 
 register("resetbackup", {
   help: "/resetbackup [chat_id] — clear mirror log so /backup starts from post 1 (all channels if no id)",
