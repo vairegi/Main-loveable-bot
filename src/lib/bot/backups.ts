@@ -348,8 +348,8 @@ export async function removeBackupChannel(
 export async function wipeBackupChannelMessages(
   db: SupabaseClient,
   backupChatId: number,
-  limit = 200,
-  delayMs = 60,
+  limit = 60,
+  delayMs = 40,
 ): Promise<{ deleted: number; failed: number; remaining: number; firstError?: string }> {
   const { data: rows, error } = await db
     .from("backup_copies")
