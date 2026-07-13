@@ -2,7 +2,7 @@
 // Tracks per-channel mirror state in `backup_copies` so runs are incremental.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { copyMessage, forwardMessage, sendPhoto, sendVideo, sendDocument, sendAudio } from "./telegram";
+import { copyMessage, forwardMessage, sendPhoto, sendVideo, sendDocument, sendAudio, deleteMessage } from "./telegram";
 import { getSettingText } from "./settings";
 
 
