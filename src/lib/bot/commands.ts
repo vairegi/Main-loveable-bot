@@ -20,7 +20,7 @@ import {
   resetAllPostedPosts,
   type Schedule,
 } from "./posting";
-import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeBackupChannel, wipeBackupChannelMessages } from "./backups";
+import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeBackupChannel, wipeBackupChannelMessages, markAllBackedUp } from "./backups";
 import { getAutodeleteSeconds, setAutodeleteSeconds, parseDuration, formatDuration } from "./autodelete";
 import { listForceSubChannels, addForceSubChannel, removeForceSubChannel } from "./fsub";
 import { promptConfirm, registerConfirmExecutor } from "./confirm";
