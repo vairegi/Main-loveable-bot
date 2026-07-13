@@ -188,8 +188,9 @@ export async function backupAllToChannel(
   const exhaustedIds = new Set<number>(
     Array.from(failMap.entries()).filter(([, n]) => n >= maxFailedAttempts).map(([id]) => id),
   );
+  const alreadyExhausted = Array.from(exhaustedIds).filter((id) => !done.has(id)).length;
 
-  const totalToDo = Math.max(0, totalAll - alreadyDone - exhaustedIds.size);
+  const totalToDo = Math.max(0, totalAll - alreadyDone - alreadyExhausted);
 
   let mirrored = 0;
   let skipped = 0;
@@ -243,7 +244,7 @@ export async function backupAllToChannel(
             try {
               await onProgress({
                 processed, mirrored, failed, totalToDo, totalAll,
-                doneAll: alreadyDone + mirrored,
+                doneAll: alreadyDone + alreadyExhausted + mirrored,
               });
             } catch { /* ignore */ }
           }
@@ -285,7 +286,7 @@ export async function backupAllToChannel(
             failed,
             totalToDo,
             totalAll,
-            doneAll: alreadyDone + mirrored,
+            doneAll: alreadyDone + alreadyExhausted + mirrored,
           });
         } catch { /* ignore progress errors */ }
       }
@@ -302,7 +303,7 @@ export async function backupAllToChannel(
     firstError,
     totalAll,
     totalToDo,
-    doneAll: alreadyDone + mirrored + skippedIds.length,
+    doneAll: alreadyDone + alreadyExhausted + mirrored + skippedIds.length,
     skippedIds,
   };
 }
