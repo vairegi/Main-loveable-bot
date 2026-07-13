@@ -123,6 +123,7 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "backup10", role: "admin", syntax: "<chat_id>", description: "Test: mirror only the next 10 un-mirrored posts." },
       { name: "scandatabase", role: "admin", description: "Forward any new database posts to all backup channels." },
       { name: "resetbackup", role: "admin", syntax: "[chat_id]", description: "Clear mirror log so /backup starts from post 1 (all channels if no id)." },
+      { name: "undoresetbackup", role: "admin", syntax: "<chat_id>", description: "Undo an accidental /resetbackup — mark every post as already mirrored so the bot won't re-forward them." },
       { name: "dltbackup", role: "admin", syntax: "<chat_id>", description: "Delete every message the bot mirrored to a backup channel and clear its mirror log (confirms; re-run until remaining = 0)." },
       { name: "pausebackup", role: "admin", description: "Pause auto-backup cron." },
       { name: "resumebackup", role: "admin", description: "Resume auto-backup; posts added while paused mirror on the next cron tick." },
