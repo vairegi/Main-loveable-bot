@@ -1083,18 +1083,18 @@ register("resetbackup", {
   },
 });
 
-register("wipebackup", {
-  help: "/wipebackup <chat_id> — delete every message the bot mirrored to a backup channel and clear its mirror log (asks to confirm; re-run until remaining = 0)",
+register("dltbackup", {
+  help: "/dltbackup <chat_id> — delete every message the bot mirrored to a backup channel and clear its mirror log (asks to confirm; re-run until remaining = 0)",
   adminOnly: true,
   handler: async ({ chatId, user, args }) => {
     const cid = Number(args[0]);
-    if (!cid) return "Usage: /wipebackup &lt;chat_id&gt;";
+    if (!cid) return "Usage: /dltbackup &lt;chat_id&gt;";
     await promptConfirm(
       chatId,
       user.id,
       "wpb",
       String(cid),
-      `⚠️ <b>Confirm wipe backup</b>\n\nThis will delete every message the bot mirrored to <code>${cid}</code> and clear its mirror log.\n\nBot must be an admin with delete rights in that channel. Re-run until <b>remaining = 0</b>.\n\nTap <b>Yes</b> to proceed.`,
+      `⚠️ <b>Confirm delete backup</b>\n\nThis will delete every message the bot mirrored to <code>${cid}</code> and clear its mirror log.\n\nBot must be an admin with delete rights in that channel. Re-run until <b>remaining = 0</b>.\n\nTap <b>Yes</b> to proceed.`,
     );
     return null;
   },
@@ -1124,30 +1124,37 @@ registerConfirmExecutor("wpb", async ({ db, userId }, payload) => {
     remaining = r.remaining;
     if (r.firstError && !firstError) firstError = r.firstError;
 
-    // Hard fail: first batch made no progress and reported an error.
     if (batches === 1 && r.firstError && r.deleted === 0 && r.failed === 0) {
       return `❌ ${r.firstError}`;
     }
-    // Nothing left, or this batch did nothing (avoid infinite loop).
     if (remaining === 0) break;
     if (r.deleted === 0 && r.failed === 0) break;
-    // Out of time — stop and let the user re-run.
     if (Date.now() > deadline) break;
   }
 
+  // Once all trackable messages are handled, also clear the mirror log for
+  // this channel so the database reflects a full wipe (drops any leftover
+  // rows with null backup_message_id from previously-failed mirrors).
+  let clearedRows = 0;
+  if (remaining === 0) {
+    const reset = await resetBackupTracking(db, cid);
+    clearedRows = reset.cleared;
+    if (reset.error && !firstError) firstError = reset.error;
+  }
+
   await logAction(db, { id: userId }, "wipe_backup_channel", {
-    chatId: cid, deleted: totalDeleted, failed: totalFailed, remaining, batches,
+    chatId: cid, deleted: totalDeleted, failed: totalFailed, remaining, batches, clearedRows,
   });
 
   const lines = [
-    `🧹 <b>Wipe backup</b> <code>${cid}</code>`,
+    `🧹 <b>Delete backup</b> <code>${cid}</code>`,
     `Deleted: <b>${totalDeleted}</b>`,
     `Failed: <b>${totalFailed}</b>`,
     `Remaining: <b>${remaining}</b>`,
     `Batches: <b>${batches}</b>`,
   ];
-  if (remaining > 0) lines.push("", `Run /wipebackup <code>${cid}</code> again to continue.`);
-  else lines.push("", `✅ Done. Run /resetbackup <code>${cid}</code> then /backup <code>${cid}</code> to re-mirror from post 1.`);
+  if (remaining > 0) lines.push("", `Run /dltbackup <code>${cid}</code> again to continue.`);
+  else lines.push("", `Mirror log cleared: <b>${clearedRows}</b> row(s).`, `✅ Done. Run /backup <code>${cid}</code> to re-mirror from post 1.`);
   if (firstError) lines.push("", `First error: ${firstError.slice(0, 200)}`);
   return lines.join("\n");
 });
