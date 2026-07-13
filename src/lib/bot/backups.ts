@@ -188,7 +188,7 @@ export async function backupAllToChannel(
   const exhaustedIds = new Set<number>(
     Array.from(failMap.entries()).filter(([, n]) => n >= maxFailedAttempts).map(([id]) => id),
   );
-  const alreadyExhausted = exhaustedIds.size;
+  const alreadyExhausted = Array.from(exhaustedIds).filter((id) => !done.has(id)).length;
 
   const totalToDo = Math.max(0, totalAll - alreadyDone - alreadyExhausted);
 
