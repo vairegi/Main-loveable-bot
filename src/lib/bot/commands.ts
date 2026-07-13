@@ -1293,12 +1293,17 @@ register("backupstatus", {
           .from("backup_copies")
           .select("post_id", { count: "exact", head: true })
           .eq("backup_chat_id", cid);
-        const mirrored = Number(done ?? 0);
-        const pending = Math.max(0, total - mirrored);
-        const pct = total > 0 ? Math.floor((mirrored / total) * 100) : 100;
+        const { count: exhausted } = await db
+          .from("backup_failures")
+          .select("post_id", { count: "exact", head: true })
+          .eq("backup_chat_id", cid)
+          .gte("attempts", 3);
+        const processed = Math.min(total, Number(done ?? 0) + Number(exhausted ?? 0));
+        const pending = Math.max(0, total - processed);
+        const pct = total > 0 ? Math.floor((processed / total) * 100) : 100;
         const queued = jobs[String(cid)] ? " 🔁 queued" : "";
         const label = b.title ? `${b.title} (<code>${cid}</code>)` : `<code>${cid}</code>`;
-        lines.push(`• ${label}: <b>${mirrored}</b>/<b>${total}</b> (${pct}%) — ${pending} pending${queued}`);
+        lines.push(`• ${label}: <b>${processed}</b>/<b>${total}</b> (${pct}%) — ${pending} pending${queued}`);
       }
     }
 
