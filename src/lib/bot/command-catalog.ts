@@ -119,7 +119,7 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "addbackup", role: "admin", syntax: "<chat_id>", description: "Register a backup channel." },
       { name: "removebackup", role: "admin", syntax: "<chat_id>", description: "Unregister a backup channel and clear its mirror log (confirms)." },
       { name: "listbackup", role: "admin", description: "Show all backup channels." },
-      { name: "backup", role: "admin", syntax: "<chat_id>", description: "Mirror stored posts to a backup channel with a live progress bar (chunked; re-run to continue)." },
+      { name: "backup", role: "admin", syntax: "<chat_id>", description: "Start/continue mirroring stored posts to a backup channel; remaining posts continue automatically on backup ticks." },
       { name: "backup10", role: "admin", syntax: "<chat_id>", description: "Test: mirror only the next 10 un-mirrored posts." },
       { name: "scandatabase", role: "admin", description: "Forward any new database posts to all backup channels." },
       { name: "resetbackup", role: "admin", syntax: "[chat_id]", description: "Clear mirror log so /backup starts from post 1 (all channels if no id)." },
