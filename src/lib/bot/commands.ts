@@ -611,6 +611,7 @@ register("queueinfo", {
       .select("code, caption, media")
       .is("posted_at", null)
       .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .limit(n);
 
     const { count: pendingCount } = await db
