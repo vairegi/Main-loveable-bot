@@ -959,27 +959,59 @@ register("backup", {
       return "▓".repeat(filled) + "░".repeat(10 - filled);
     };
 
+    // Loop backupAllToChannel in batches until the queue is empty, the wall-time
+    // budget is exhausted, or a batch makes zero progress. This way a single
+    // /backup call keeps going instead of stopping after the first ~15 posts.
+    const deadline = Date.now() + 50_000;
+    const MAX_BATCHES = 60;
+    let totalMirrored = 0;
+    let totalFailed = 0;
+    let totalSkipped = 0;
+    let totalAll = 0;
+    let doneAll = 0;
+    let totalToDoAll = 0;
+    let firstError: string | undefined;
+    let batches = 0;
     let lastEditAt = 0;
-    const r = await backupAllToChannel(db, cid, BATCH, async (p) => {
-      if (!statusMsgId) return;
-      // Throttle edits to ~1/sec to avoid Telegram edit flood-control.
-      const now = Date.now();
-      if (now - lastEditAt < 1000 && p.processed !== p.totalToDo && p.processed < BATCH) return;
-      lastEditAt = now;
-      const pct = p.totalAll ? Math.floor((p.doneAll / p.totalAll) * 100) : 0;
-      const text =
-        `💾 Backup to <code>${cid}</code>\n` +
-        `${bar(pct)}  <b>${pct}%</b>\n` +
-        `Overall: <b>${p.doneAll}</b> / ${p.totalAll} mirrored\n` +
-        `This run: ${p.mirrored} ok, ${p.failed} failed (of ${p.totalToDo} pending)`;
-      try { await editMessageText(chatId, statusMsgId, text); } catch { /* ignore */ }
-    });
 
-    await logAction(db, user, "backup_channel", { chatId: cid, mirrored: r.mirrored, failed: r.failed });
+    while (batches < MAX_BATCHES) {
+      const r = await backupAllToChannel(db, cid, BATCH, async (p) => {
+        if (!statusMsgId) return;
+        const now = Date.now();
+        if (now - lastEditAt < 1000 && p.processed !== p.totalToDo) return;
+        lastEditAt = now;
+        const runningDone = doneAll + p.doneAll - (batches === 0 ? 0 : 0);
+        const overallDone = p.doneAll;
+        const overallAll = p.totalAll;
+        const pct = overallAll ? Math.floor((overallDone / overallAll) * 100) : 0;
+        const text =
+          `💾 Backup to <code>${cid}</code>\n` +
+          `${bar(pct)}  <b>${pct}%</b>\n` +
+          `Overall: <b>${overallDone}</b> / ${overallAll} mirrored\n` +
+          `This run: ${totalMirrored + p.mirrored} ok, ${totalFailed + p.failed} failed  (batch ${batches + 1})`;
+        try { await editMessageText(chatId, statusMsgId!, text); } catch { /* ignore */ }
+        void runningDone;
+      });
+      batches++;
+      totalMirrored += r.mirrored;
+      totalFailed += r.failed;
+      totalSkipped += r.skipped;
+      totalAll = r.totalAll;
+      doneAll = r.doneAll;
+      totalToDoAll += r.totalToDo;
+      if (r.firstError && !firstError) firstError = r.firstError;
 
-    const pct = r.totalAll ? Math.floor((r.doneAll / r.totalAll) * 100) : 100;
-    const remaining = r.totalToDo - r.mirrored - r.failed;
-    const err = r.firstError ? `\n\nFirst error: ${r.firstError.slice(0, 200)}` : "";
+      const remaining = r.totalAll - r.doneAll;
+      if (remaining <= 0) break;
+      if (r.mirrored === 0 && r.failed === 0) break; // no forward motion
+      if (Date.now() > deadline) break;
+    }
+
+    await logAction(db, user, "backup_channel", { chatId: cid, mirrored: totalMirrored, failed: totalFailed, batches });
+
+    const pct = totalAll ? Math.floor((doneAll / totalAll) * 100) : 100;
+    const remaining = Math.max(0, totalAll - doneAll);
+    const err = firstError ? `\n\nFirst error: ${firstError.slice(0, 200)}` : "";
     const more = remaining > 0
       ? `\n\n▶️ <b>${remaining}</b> post(s) still pending. Run /backup ${cid} again to continue.`
       : `\n\n✅ All caught up.`;
@@ -987,13 +1019,14 @@ register("backup", {
     const finalText =
       `💾 Backup to <code>${cid}</code>\n` +
       `${bar(pct)}  <b>${pct}%</b>\n` +
-      `Overall: <b>${r.doneAll}</b> / ${r.totalAll} mirrored\n` +
-      `This run: mirrored <b>${r.mirrored}</b>, failed <b>${r.failed}</b>, already-had <b>${r.skipped}</b>.${more}${err}`;
+      `Overall: <b>${doneAll}</b> / ${totalAll} mirrored\n` +
+      `This run: mirrored <b>${totalMirrored}</b>, failed <b>${totalFailed}</b>, already-had <b>${totalSkipped}</b>, batches <b>${batches}</b>.${more}${err}`;
 
     if (statusMsgId) {
       try { await editMessageText(chatId, statusMsgId, finalText); return null; } catch { /* fallthrough */ }
     }
     return finalText;
+
   },
 });
 
