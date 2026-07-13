@@ -198,6 +198,7 @@ export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<
     .select("*")
     .is("posted_at", null)
     .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
     .limit(batchSize);
 
   if (!queue?.length) return { posted: 0, failed: 0, drained: true, failures: [] };
@@ -220,12 +221,22 @@ export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<
   return { posted, failed, drained: queue.length < batchSize, failures };
 }
 
-export async function getPostPosition(db: SupabaseClient, post: { created_at: string }): Promise<number> {
-  const { count } = await db
+export async function getPostPosition(db: SupabaseClient, post: { id?: number | string; created_at: string }): Promise<number> {
+  const { count: beforeCount } = await db
     .from("posts")
     .select("id", { count: "exact", head: true })
-    .lte("created_at", post.created_at);
-  return count ?? 1;
+    .lt("created_at", post.created_at);
+
+  const postId = Number(post.id);
+  if (!Number.isFinite(postId)) return (beforeCount ?? 0) + 1;
+
+  const { count: sameTimeCount } = await db
+    .from("posts")
+    .select("id", { count: "exact", head: true })
+    .eq("created_at", post.created_at)
+    .lte("id", postId);
+
+  return (beforeCount ?? 0) + (sameTimeCount ?? 1);
 }
 
 async function publishPost(db: SupabaseClient, post: any): Promise<void> {
