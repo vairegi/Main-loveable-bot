@@ -1,0 +1,2 @@
+REVOKE EXECUTE ON FUNCTION public.bootstrap_telegram_super_admin(bigint, text, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.bootstrap_telegram_super_admin(bigint, text, text, text) TO service_role;
