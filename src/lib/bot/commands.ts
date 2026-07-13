@@ -1103,20 +1103,55 @@ register("wipebackup", {
 registerConfirmExecutor("wpb", async ({ db, userId }, payload) => {
   const cid = Number(payload);
   if (!cid) return "❌ Invalid channel id.";
-  const r = await wipeBackupChannelMessages(db, cid);
-  if (r.firstError && r.deleted === 0 && r.failed === 0) return `❌ ${r.firstError}`;
-  await logAction(db, { id: userId }, "wipe_backup_channel", { chatId: cid, deleted: r.deleted, failed: r.failed, remaining: r.remaining });
+
+  // Auto-rerun: keep wiping in batches until remaining hits 0, we exhaust the
+  // time budget for this webhook invocation, or we hit a hard error / too many
+  // consecutive failures. Each wipeBackupChannelMessages call handles one
+  // batch of ~60 messages with its own inter-message delay.
+  const deadline = Date.now() + 50_000; // leave headroom under Worker limit
+  let totalDeleted = 0;
+  let totalFailed = 0;
+  let remaining = 0;
+  let firstError: string | undefined;
+  let batches = 0;
+  const MAX_BATCHES = 40;
+
+  while (batches < MAX_BATCHES) {
+    const r = await wipeBackupChannelMessages(db, cid);
+    batches++;
+    totalDeleted += r.deleted;
+    totalFailed += r.failed;
+    remaining = r.remaining;
+    if (r.firstError && !firstError) firstError = r.firstError;
+
+    // Hard fail: first batch made no progress and reported an error.
+    if (batches === 1 && r.firstError && r.deleted === 0 && r.failed === 0) {
+      return `❌ ${r.firstError}`;
+    }
+    // Nothing left, or this batch did nothing (avoid infinite loop).
+    if (remaining === 0) break;
+    if (r.deleted === 0 && r.failed === 0) break;
+    // Out of time — stop and let the user re-run.
+    if (Date.now() > deadline) break;
+  }
+
+  await logAction(db, { id: userId }, "wipe_backup_channel", {
+    chatId: cid, deleted: totalDeleted, failed: totalFailed, remaining, batches,
+  });
+
   const lines = [
     `🧹 <b>Wipe backup</b> <code>${cid}</code>`,
-    `Deleted: <b>${r.deleted}</b>`,
-    `Failed: <b>${r.failed}</b>`,
-    `Remaining: <b>${r.remaining}</b>`,
+    `Deleted: <b>${totalDeleted}</b>`,
+    `Failed: <b>${totalFailed}</b>`,
+    `Remaining: <b>${remaining}</b>`,
+    `Batches: <b>${batches}</b>`,
   ];
-  if (r.remaining > 0) lines.push("", `Run /wipebackup <code>${cid}</code> again to continue.`);
+  if (remaining > 0) lines.push("", `Run /wipebackup <code>${cid}</code> again to continue.`);
   else lines.push("", `✅ Done. Run /resetbackup <code>${cid}</code> then /backup <code>${cid}</code> to re-mirror from post 1.`);
-  if (r.firstError) lines.push("", `First error: ${r.firstError.slice(0, 200)}`);
+  if (firstError) lines.push("", `First error: ${firstError.slice(0, 200)}`);
   return lines.join("\n");
 });
+
 
 
 register("pausebackup", {
