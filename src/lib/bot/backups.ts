@@ -59,11 +59,15 @@ async function alreadyMirroredSet(db: SupabaseClient, backupChatId: number): Pro
   return new Set((data ?? []).map((r) => Number(r.post_id)));
 }
 
+function isTransientTgError(msg: string): boolean {
+  return /429|retry_after|too many requests|flood|network error|gateway 5\d\d|timeout|ETIMEDOUT|ECONNRESET|non-JSON body/i.test(msg);
+}
+
 async function mirrorOne(
   db: SupabaseClient,
   post: any,
   backupChatId: number,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; transient?: boolean }> {
   const sourceChatId = post.source_chat_id;
   const sourceMessageId = post.source_message_id;
   if (!sourceChatId || !sourceMessageId) {
@@ -81,10 +85,6 @@ async function mirrorOne(
   const caption = `#${position}\n\n${appendExtra(baseCaption, postExtra)}`.trim();
 
   try {
-    // Mirror the main message. If it's a photo/video with a stored file_id,
-    // re-send it with has_spoiler so the backup channel gets a spoiler-covered
-    // media. Otherwise fall back to copy/forward (with caption override so the
-    // position tag is preserved).
     let main: any;
     if (media.kind === "photo" && media.file_id) {
       main = await sendPhoto(dest, media.file_id, { caption, has_spoiler: true });
@@ -94,9 +94,6 @@ async function mirrorOne(
       main = await copyOrForward(dest, from, Number(sourceMessageId), { caption });
     }
 
-    // Mirror extra files (docs, etc.) — best effort. Extra files carry the
-    // /filecaption text (they're files, not posts), matching user-facing
-    // delivery behavior.
     const extras = Array.isArray(post.extra_files) ? post.extra_files : [];
     for (const [i, f] of extras.entries()) {
       const smid = f?.source_message_id ?? Number(sourceMessageId) + i + 1;
@@ -130,7 +127,8 @@ async function mirrorOne(
 
     return { ok: true };
   } catch (e: any) {
-    return { ok: false, error: e?.message ?? "unknown error" };
+    const errMsg = e?.message ?? "unknown error";
+    return { ok: false, error: errMsg, transient: isTransientTgError(errMsg) };
   }
 }
 
@@ -236,6 +234,22 @@ export async function backupAllToChannel(
       } else {
         failed++;
         if (!firstError) firstError = r.error;
+
+        if (r.transient) {
+          // Flood control / gateway timeout / network — don't count this as a
+          // permanent failure attempt. Stop this run so the channel can rest;
+          // the next /backup call will retry this same post from post 1 order.
+          if (onProgress) {
+            try {
+              await onProgress({
+                processed, mirrored, failed, totalToDo, totalAll,
+                doneAll: alreadyDone + mirrored,
+              });
+            } catch { /* ignore */ }
+          }
+          break outer;
+        }
+
         const prev = failMap.get(pid) ?? 0;
         const attempts = prev + 1;
         failMap.set(pid, attempts);
@@ -321,6 +335,10 @@ export async function resetBackupTracking(
     ? await q.eq("backup_chat_id", backupChatId)
     : await q.gte("id", 0);
   if (error) return { cleared: 0, error: error.message };
+  // Also clear the failure log so previously-exhausted posts get retried.
+  const fq = db.from("backup_failures").delete({ count: "exact" });
+  if (backupChatId) await fq.eq("backup_chat_id", backupChatId);
+  else await fq.gte("attempts", 0);
   return { cleared: count ?? 0 };
 }
 
