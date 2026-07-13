@@ -178,49 +178,19 @@ register("start", {
 register("help", {
   help: "/help — list commands you can use",
   handler: async ({ isAdmin, isSuperAdmin }) => {
-    const categories: { title: string; cmds: string[] }[] = [
-      { title: "👤 General", cmds: ["start", "help", "whoami"] },
-      { title: "🛡️ Admin management", cmds: ["addadmin", "removeadmin", "listadmins", "genimporttoken"] },
-      { title: "📡 Channels", cmds: ["addchannel", "removechannel", "listchannels", "setlog"] },
-      { title: "📝 Posting", cmds: ["setcaption", "postcaption", "filecaption", "pauseposting", "resumeposting", "repost", "mpost", "deletepost", "undelete", "deletedposts"] },
-      { title: "⏱️ Queue & drip scheduler", cmds: ["queue", "queueinfo", "scheduleoff", "setschedule", "dripnow", "reset", "resetall"] },
-      { title: "💾 Backups", cmds: ["addbackup", "removebackup", "listbackup", "backup", "backup10", "scandatabase", "resetbackup", "pausebackup", "resumebackup", "backupstatus"] },
-      { title: "🔒 Content controls", cmds: ["protect", "spoiler", "autodelete", "fsub", "fsublist", "fsubremove"] },
-      { title: "📊 Users & moderation", cmds: ["stats", "duplicates", "doctor", "broadcast", "ban", "unban", "banlist"] },
-      { title: "🌐 Web admin", cmds: ["linkweb", "setweburl"] },
-      { title: "⭐ User features", cmds: ["favs"] },
-    ];
+    const { commandsVisibleTo, COMMANDS_DOCS_URL } = await import("./command-catalog");
+    const role = isSuperAdmin ? "super" : isAdmin ? "admin" : "user";
+    const cats = commandsVisibleTo(role);
 
-
-    const lines: string[] = ["<b>📖 Available commands</b>"];
-    const seen = new Set<string>();
-
-    for (const cat of categories) {
-      const catLines: string[] = [];
-      for (const name of cat.cmds) {
-        const def = commands.get(name);
-        if (!def) continue;
-        if (def.superOnly && !isSuperAdmin) continue;
-        if (def.adminOnly && !isAdmin) continue;
-        catLines.push("• " + def.help);
-        seen.add(name);
-      }
-      if (catLines.length) {
-        lines.push("", `<b>${cat.title}</b>`, ...catLines);
-      }
+    const lines: string[] = ["<b>📖 Commands</b>"];
+    for (const cat of cats) {
+      lines.push("", `<b>${cat.emoji} ${cat.title}</b>`);
+      lines.push(cat.commands.map((c) => `/${c.name}`).join("  "));
     }
-
-    const extras: string[] = [];
-    for (const [name, def] of commands) {
-      if (seen.has(name)) continue;
-      if (def.superOnly && !isSuperAdmin) continue;
-      if (def.adminOnly && !isAdmin) continue;
-      extras.push("• " + def.help);
-      seen.add(name);
-    }
-    if (extras.length) lines.push("", "<b>✨ Other</b>", ...extras);
-
-    lines.push("", "<i>Tip: most commands are admin-only. Use /whoami to check your role.</i>");
+    lines.push(
+      "",
+      `<i>Tap a command to run it. Full descriptions: <a href="${COMMANDS_DOCS_URL}">${COMMANDS_DOCS_URL}</a></i>`,
+    );
     return lines.join("\n");
   },
 });
