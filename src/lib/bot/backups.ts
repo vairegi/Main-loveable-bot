@@ -2,7 +2,7 @@
 // Tracks per-channel mirror state in `backup_copies` so runs are incremental.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { copyMessage, forwardMessage, sendPhoto, sendVideo, sendDocument, sendAudio } from "./telegram";
+import { copyMessage, forwardMessage, sendPhoto, sendVideo, sendDocument, sendAudio, deleteMessage } from "./telegram";
 import { getSettingText } from "./settings";
 
 
@@ -341,3 +341,60 @@ export async function removeBackupChannel(
   if (error) return { removed: false, clearedCopies: clearedCopies ?? 0, error: error.message };
   return { removed: (count ?? 0) > 0, clearedCopies: clearedCopies ?? 0 };
 }
+
+// Delete previously-mirrored messages from a backup channel and clear their
+// tracking rows. Chunked so it fits inside the Worker time budget — re-run
+// until it reports 0 remaining.
+export async function wipeBackupChannelMessages(
+  db: SupabaseClient,
+  backupChatId: number,
+  limit = 200,
+  delayMs = 60,
+): Promise<{ deleted: number; failed: number; remaining: number; firstError?: string }> {
+  const { data: rows, error } = await db
+    .from("backup_copies")
+    .select("id, backup_message_id")
+    .eq("backup_chat_id", backupChatId)
+    .not("backup_message_id", "is", null)
+    .order("id", { ascending: true })
+    .limit(limit);
+  if (error) return { deleted: 0, failed: 0, remaining: 0, firstError: error.message };
+
+  let deleted = 0;
+  let failed = 0;
+  let firstError: string | undefined;
+  const clearedIds: number[] = [];
+
+  for (const r of rows ?? []) {
+    const mid = Number(r.backup_message_id);
+    if (!mid) continue;
+    try {
+      await deleteMessage(backupChatId, mid);
+      deleted++;
+      clearedIds.push(Number(r.id));
+    } catch (e: any) {
+      const msg = String(e?.message ?? "");
+      // "message to delete not found" / already gone → treat as cleared.
+      if (/not found|message can't be deleted|MESSAGE_ID_INVALID/i.test(msg)) {
+        clearedIds.push(Number(r.id));
+      } else {
+        failed++;
+        if (!firstError) firstError = msg;
+      }
+    }
+    if (delayMs > 0) await new Promise((res) => setTimeout(res, delayMs));
+  }
+
+  if (clearedIds.length > 0) {
+    await db.from("backup_copies").delete().in("id", clearedIds);
+  }
+
+  const { count } = await db
+    .from("backup_copies")
+    .select("id", { count: "exact", head: true })
+    .eq("backup_chat_id", backupChatId)
+    .not("backup_message_id", "is", null);
+
+  return { deleted, failed, remaining: count ?? 0, firstError };
+}
+
