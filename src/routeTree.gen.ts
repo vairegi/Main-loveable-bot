@@ -9,28 +9,19 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as McpRouteImport } from './routes/mcp'
 import { Route as CommandsRouteImport } from './routes/commands'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LinkTokenRouteImport } from './routes/link.$token'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
-import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
-import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
-import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicTelegramImportRouteImport } from './routes/api/public/telegram/import'
 import { Route as ApiPublicHooksDripRouteImport } from './routes/api/public/hooks/drip'
 import { Route as ApiPublicHooksAutodeleteRouteImport } from './routes/api/public/hooks/autodelete'
 import { Route as ApiPublicHooksAutoBackupRouteImport } from './routes/api/public/hooks/auto-backup'
 
-const McpRoute = McpRouteImport.update({
-  id: '/mcp',
-  path: '/mcp',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CommandsRoute = CommandsRouteImport.update({
   id: '/commands',
   path: '/commands',
@@ -60,29 +51,11 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const Char91DotwellKnownChar93OauthProtectedResourceRoute =
-  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
-    id: '/.well-known/oauth-protected-resource',
-    path: '/.well-known/oauth-protected-resource',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const Char91DotmcpChar93ListToolsRoute =
-  Char91DotmcpChar93ListToolsRouteImport.update({
-    id: '/.mcp/list-tools',
-    path: '/.mcp/list-tools',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiPublicHealthRoute = ApiPublicHealthRouteImport.update({
   id: '/api/public/health',
   path: '/api/public/health',
   getParentRoute: () => rootRouteImport,
 } as any)
-const Char91DotmcpChar93InvokeToolToolRoute =
-  Char91DotmcpChar93InvokeToolToolRouteImport.update({
-    id: '/.mcp/invoke-tool/$tool',
-    path: '/.mcp/invoke-tool/$tool',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiPublicTelegramWebhookRoute =
   ApiPublicTelegramWebhookRouteImport.update({
     id: '/api/public/telegram/webhook',
@@ -116,12 +89,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/commands': typeof CommandsRoute
-  '/mcp': typeof McpRoute
-  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
-  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/link/$token': typeof LinkTokenRoute
-  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
   '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
@@ -133,12 +102,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/commands': typeof CommandsRoute
-  '/mcp': typeof McpRoute
-  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
-  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/link/$token': typeof LinkTokenRoute
-  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
   '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
@@ -152,12 +117,8 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/commands': typeof CommandsRoute
-  '/mcp': typeof McpRoute
-  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
-  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/link/$token': typeof LinkTokenRoute
-  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
   '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
@@ -171,12 +132,8 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/commands'
-    | '/mcp'
-    | '/.mcp/list-tools'
-    | '/.well-known/oauth-protected-resource'
     | '/admin'
     | '/link/$token'
-    | '/.mcp/invoke-tool/$tool'
     | '/api/public/health'
     | '/api/public/hooks/auto-backup'
     | '/api/public/hooks/autodelete'
@@ -188,12 +145,8 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/commands'
-    | '/mcp'
-    | '/.mcp/list-tools'
-    | '/.well-known/oauth-protected-resource'
     | '/admin'
     | '/link/$token'
-    | '/.mcp/invoke-tool/$tool'
     | '/api/public/health'
     | '/api/public/hooks/auto-backup'
     | '/api/public/hooks/autodelete'
@@ -206,12 +159,8 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/commands'
-    | '/mcp'
-    | '/.mcp/list-tools'
-    | '/.well-known/oauth-protected-resource'
     | '/_authenticated/admin'
     | '/link/$token'
-    | '/.mcp/invoke-tool/$tool'
     | '/api/public/health'
     | '/api/public/hooks/auto-backup'
     | '/api/public/hooks/autodelete'
@@ -225,11 +174,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   CommandsRoute: typeof CommandsRoute
-  McpRoute: typeof McpRoute
-  Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
-  Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   LinkTokenRoute: typeof LinkTokenRoute
-  Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicHooksAutoBackupRoute: typeof ApiPublicHooksAutoBackupRoute
   ApiPublicHooksAutodeleteRoute: typeof ApiPublicHooksAutodeleteRoute
@@ -240,13 +185,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/mcp': {
-      id: '/mcp'
-      path: '/mcp'
-      fullPath: '/mcp'
-      preLoaderRoute: typeof McpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/commands': {
       id: '/commands'
       path: '/commands'
@@ -289,32 +227,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/.well-known/oauth-protected-resource': {
-      id: '/.well-known/oauth-protected-resource'
-      path: '/.well-known/oauth-protected-resource'
-      fullPath: '/.well-known/oauth-protected-resource'
-      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/.mcp/list-tools': {
-      id: '/.mcp/list-tools'
-      path: '/.mcp/list-tools'
-      fullPath: '/.mcp/list-tools'
-      preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/health': {
       id: '/api/public/health'
       path: '/api/public/health'
       fullPath: '/api/public/health'
       preLoaderRoute: typeof ApiPublicHealthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/.mcp/invoke-tool/$tool': {
-      id: '/.mcp/invoke-tool/$tool'
-      path: '/.mcp/invoke-tool/$tool'
-      fullPath: '/.mcp/invoke-tool/$tool'
-      preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/telegram/webhook': {
@@ -371,12 +288,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   CommandsRoute: CommandsRoute,
-  McpRoute: McpRoute,
-  Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
-  Char91DotwellKnownChar93OauthProtectedResourceRoute:
-    Char91DotwellKnownChar93OauthProtectedResourceRoute,
   LinkTokenRoute: LinkTokenRoute,
-  Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicHooksAutoBackupRoute: ApiPublicHooksAutoBackupRoute,
   ApiPublicHooksAutodeleteRoute: ApiPublicHooksAutodeleteRoute,
