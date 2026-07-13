@@ -1160,6 +1160,19 @@ register("resetbackup", {
   },
 });
 
+register("undoresetbackup", {
+  help: "/undoresetbackup <chat_id> — mark every post as already mirrored to a backup channel (undo an accidental /resetbackup without re-forwarding)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const cid = Number(args[0]);
+    if (!cid) return "Usage: /undoresetbackup &lt;chat_id&gt;";
+    const r = await markAllBackedUp(db, cid);
+    if (r.error) return `❌ ${r.error}`;
+    await logAction(db, user, "undo_reset_backup", { chatId: cid, inserted: r.inserted, totalPosts: r.totalPosts });
+    return `✅ Marked <b>${r.inserted}</b> / ${r.totalPosts} post(s) as already mirrored to <code>${cid}</code>.\n\nThe bot will now skip re-backing up these posts. New posts going forward will still be mirrored normally.\n\n<i>Note: tracking rows have no message id, so /dltbackup can't auto-delete these from the channel — but that's fine since the messages are already there.</i>`;
+  },
+});
+
 register("dltbackup", {
   help: "/dltbackup <chat_id> — delete every message the bot mirrored to a backup channel and clear its mirror log (asks to confirm; re-run until remaining = 0)",
   adminOnly: true,
