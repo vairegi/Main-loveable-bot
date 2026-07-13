@@ -374,8 +374,10 @@ export async function wipeBackupChannelMessages(
       clearedIds.push(Number(r.id));
     } catch (e: any) {
       const msg = String(e?.message ?? "");
-      // "message to delete not found" / already gone → treat as cleared.
+      // "message to delete not found" / already gone → treat as cleared
+      // (count as deleted so progress is visible to the user).
       if (/not found|message can't be deleted|MESSAGE_ID_INVALID/i.test(msg)) {
+        deleted++;
         clearedIds.push(Number(r.id));
       } else {
         failed++;
