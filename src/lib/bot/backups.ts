@@ -335,6 +335,10 @@ export async function resetBackupTracking(
     ? await q.eq("backup_chat_id", backupChatId)
     : await q.gte("id", 0);
   if (error) return { cleared: 0, error: error.message };
+  // Also clear the failure log so previously-exhausted posts get retried.
+  const fq = db.from("backup_failures").delete({ count: "exact" });
+  if (backupChatId) await fq.eq("backup_chat_id", backupChatId);
+  else await fq.gte("attempts", 0);
   return { cleared: count ?? 0 };
 }
 
