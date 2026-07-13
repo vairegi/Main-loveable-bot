@@ -139,7 +139,12 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
               .from("backup_copies")
               .select("post_id", { count: "exact", head: true })
               .eq("backup_chat_id", cid);
-            if (Number(done ?? 0) < total) { anyPending = true; break; }
+            const { count: exhausted } = await db
+              .from("backup_failures")
+              .select("post_id", { count: "exact", head: true })
+              .eq("backup_chat_id", cid)
+              .gte("attempts", 3);
+            if (Number(done ?? 0) + Number(exhausted ?? 0) < total) { anyPending = true; break; }
           }
           if (!anyPending) {
             return Response.json({ ok: true, idle: true, totalPosts: total });
