@@ -1264,14 +1264,51 @@ register("resumebackup", {
 });
 
 register("backupstatus", {
-  help: "/backupstatus — show whether auto-backup is paused or running",
+  help: "/backupstatus — show whether auto-backup is paused/running and current backup progress",
   adminOnly: true,
   handler: async ({ db }) => {
-    const { data } = await db.from("bot_settings").select("value").eq("key", "auto_backup_paused").maybeSingle();
-    const paused = Boolean((data?.value as { paused?: boolean } | null)?.paused);
-    return paused
-      ? "⏸ Auto-backup is <b>PAUSED</b>. Use /resumebackup to resume."
-      : "▶️ Auto-backup is <b>RUNNING</b>. Use /pausebackup to pause.";
+    const [{ data: pausedRow }, { data: jobsRow }, { count: totalPosts }, { data: backups }] = await Promise.all([
+      db.from("bot_settings").select("value").eq("key", "auto_backup_paused").maybeSingle(),
+      db.from("bot_settings").select("value").eq("key", "manual_backup_jobs").maybeSingle(),
+      db.from("posts").select("id", { count: "exact", head: true }),
+      db.from("channels").select("telegram_chat_id, title").eq("role", "backup").order("created_at"),
+    ]);
+    const paused = Boolean((pausedRow?.value as { paused?: boolean } | null)?.paused);
+    const jobs = ((jobsRow?.value as any) ?? {}) as Record<string, any>;
+    const total = Number(totalPosts ?? 0);
+    const lines = [
+      paused
+        ? "⏸ Auto-backup is <b>PAUSED</b>. Manual /backup continuations still run by cron."
+        : "▶️ Auto-backup is <b>RUNNING</b>.",
+      "",
+      "<b>Backup progress</b>",
+    ];
+
+    if (!backups?.length) {
+      lines.push("No backup channels registered.");
+    } else {
+      for (const b of backups) {
+        const cid = Number(b.telegram_chat_id);
+        const { count: done } = await db
+          .from("backup_copies")
+          .select("post_id", { count: "exact", head: true })
+          .eq("backup_chat_id", cid);
+        const { count: exhausted } = await db
+          .from("backup_failures")
+          .select("post_id", { count: "exact", head: true })
+          .eq("backup_chat_id", cid)
+          .gte("attempts", 3);
+        const processed = Math.min(total, Number(done ?? 0) + Number(exhausted ?? 0));
+        const pending = Math.max(0, total - processed);
+        const pct = total > 0 ? Math.floor((processed / total) * 100) : 100;
+        const queued = jobs[String(cid)] ? " 🔁 queued" : "";
+        const label = b.title ? `${b.title} (<code>${cid}</code>)` : `<code>${cid}</code>`;
+        lines.push(`• ${label}: <b>${processed}</b>/<b>${total}</b> (${pct}%) — ${pending} pending${queued}`);
+      }
+    }
+
+    lines.push("", "Cron: <b>every minute</b>. Use /backup &lt;chat_id&gt; once to queue continuation, or /resumebackup to fully resume auto-backup.");
+    return lines.join("\n");
   },
 });
 
