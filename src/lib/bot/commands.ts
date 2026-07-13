@@ -195,6 +195,15 @@ register("help", {
   },
 });
 
+register("commands", {
+  help: "/commands — admin-only link to the full commands reference",
+  handler: async ({ isAdmin }) => {
+    if (!isAdmin) return null; // silent for regular users
+    const { COMMANDS_DOCS_URL } = await import("./command-catalog");
+    return `📖 <b>Full commands reference</b>\n<a href="${COMMANDS_DOCS_URL}">${COMMANDS_DOCS_URL}</a>`;
+  },
+});
+
 register("whoami", {
   help: "/whoami — show your Telegram id and role",
   handler: async ({ user, isAdmin, isSuperAdmin }) => {
