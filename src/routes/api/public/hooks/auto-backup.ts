@@ -331,6 +331,12 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
           }
           manualJobsChanged = true;
         }
+        if (manualJobsChanged) {
+          await db.from("bot_settings").upsert(
+            { key: "manual_backup_jobs", value: manualJobs, updated_at: nowIso },
+            { onConflict: "key" },
+          );
+        }
 
         // Compose the summary message.
         const nowLabel = nowIso.replace("T", " ").slice(0, 19);
