@@ -1003,7 +1003,7 @@ register("backup", {
 
       const remaining = r.totalAll - r.doneAll;
       if (remaining <= 0) break;
-      if (r.mirrored === 0 && r.failed === 0) break; // no forward motion
+      if (r.mirrored === 0) break; // no forward motion (flood control / all failing) — stop and let user re-run
       if (Date.now() > deadline) break;
     }
 
