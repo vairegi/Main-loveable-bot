@@ -486,8 +486,7 @@ export async function postByLink(db: SupabaseClient, link: string): Promise<stri
 
   try {
     await publishPost(db, post);
-    await db.from("posts").update({ posted_at: new Date().toISOString() }).eq("id", post.id);
-    return `✅ Posted <code>${post.code}</code> (msg ${parsed.messageId}).`;
+    return `✅ Manually posted <code>${post.code}</code> (msg ${parsed.messageId}). It remains in the automatic queue.`;
   } catch (e: any) {
     return `❌ Post failed for msg ${parsed.messageId}: ${e?.message ?? "unknown"}`;
   }
