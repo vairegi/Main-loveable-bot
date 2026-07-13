@@ -185,7 +185,7 @@ register("help", {
     const lines: string[] = ["<b>📖 Commands</b>"];
     for (const cat of cats) {
       lines.push("", `<b>${cat.emoji} ${cat.title}</b>`);
-      lines.push(cat.commands.map((c) => `/${c.name}`).join("  "));
+      lines.push(cat.commands.map((c) => c.syntax ? `/${c.name} ${c.syntax}` : `/${c.name}`).join("\n"));
     }
     lines.push(
       "",
