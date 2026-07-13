@@ -234,6 +234,22 @@ export async function backupAllToChannel(
       } else {
         failed++;
         if (!firstError) firstError = r.error;
+
+        if (r.transient) {
+          // Flood control / gateway timeout / network — don't count this as a
+          // permanent failure attempt. Stop this run so the channel can rest;
+          // the next /backup call will retry this same post from post 1 order.
+          if (onProgress) {
+            try {
+              await onProgress({
+                processed, mirrored, failed, totalToDo, totalAll,
+                doneAll: alreadyDone + mirrored,
+              });
+            } catch { /* ignore */ }
+          }
+          break outer;
+        }
+
         const prev = failMap.get(pid) ?? 0;
         const attempts = prev + 1;
         failMap.set(pid, attempts);
