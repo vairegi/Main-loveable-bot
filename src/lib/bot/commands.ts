@@ -1039,6 +1039,21 @@ register("backup", {
 
     const pct = totalAll ? Math.floor((doneAll / totalAll) * 100) : 100;
     const remaining = Math.max(0, totalAll - doneAll);
+    if (remaining === 0) {
+      const { data: latestJobsRow } = await db
+        .from("bot_settings")
+        .select("value")
+        .eq("key", "manual_backup_jobs")
+        .maybeSingle();
+      const latestJobs = ((latestJobsRow?.value as any) ?? {}) as Record<string, any>;
+      if (latestJobs[String(cid)]) {
+        delete latestJobs[String(cid)];
+        await db.from("bot_settings").upsert(
+          { key: "manual_backup_jobs", value: latestJobs, updated_at: new Date().toISOString() },
+          { onConflict: "key" },
+        );
+      }
+    }
     const err = firstError ? `\n\nFirst error: ${firstError.slice(0, 200)}` : "";
     const more = remaining > 0
       ? `\n\n🔁 <b>${remaining}</b> post(s) still pending. Continuation is queued — the backup worker will keep mirroring this channel automatically on the next ticks, even if auto-backup is paused.`
