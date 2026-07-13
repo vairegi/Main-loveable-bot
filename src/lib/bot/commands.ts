@@ -1083,6 +1083,42 @@ register("resetbackup", {
   },
 });
 
+register("wipebackup", {
+  help: "/wipebackup <chat_id> — delete every message the bot mirrored to a backup channel and clear its mirror log (asks to confirm; re-run until remaining = 0)",
+  adminOnly: true,
+  handler: async ({ chatId, user, args }) => {
+    const cid = Number(args[0]);
+    if (!cid) return "Usage: /wipebackup &lt;chat_id&gt;";
+    await promptConfirm(
+      chatId,
+      user.id,
+      "wpb",
+      String(cid),
+      `⚠️ <b>Confirm wipe backup</b>\n\nThis will delete every message the bot mirrored to <code>${cid}</code> and clear its mirror log.\n\nBot must be an admin with delete rights in that channel. Re-run until <b>remaining = 0</b>.\n\nTap <b>Yes</b> to proceed.`,
+    );
+    return null;
+  },
+});
+
+registerConfirmExecutor("wpb", async ({ db, userId }, payload) => {
+  const cid = Number(payload);
+  if (!cid) return "❌ Invalid channel id.";
+  const r = await wipeBackupChannelMessages(db, cid);
+  if (r.firstError && r.deleted === 0 && r.failed === 0) return `❌ ${r.firstError}`;
+  await logAction(db, { id: userId }, "wipe_backup_channel", { chatId: cid, deleted: r.deleted, failed: r.failed, remaining: r.remaining });
+  const lines = [
+    `🧹 <b>Wipe backup</b> <code>${cid}</code>`,
+    `Deleted: <b>${r.deleted}</b>`,
+    `Failed: <b>${r.failed}</b>`,
+    `Remaining: <b>${r.remaining}</b>`,
+  ];
+  if (r.remaining > 0) lines.push("", `Run /wipebackup <code>${cid}</code> again to continue.`);
+  else lines.push("", `✅ Done. Run /resetbackup <code>${cid}</code> then /backup <code>${cid}</code> to re-mirror from post 1.`);
+  if (r.firstError) lines.push("", `First error: ${r.firstError.slice(0, 200)}`);
+  return lines.join("\n");
+});
+
+
 register("pausebackup", {
   help: "/pausebackup — pause auto-backup cron (new database posts stop mirroring to backup channels until /resumebackup)",
   adminOnly: true,
