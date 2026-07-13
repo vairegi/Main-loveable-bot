@@ -185,12 +185,9 @@ register("help", {
     const lines: string[] = ["<b>📖 Commands</b>"];
     for (const cat of cats) {
       lines.push("", `<b>${cat.emoji} ${cat.title}</b>`);
-      lines.push(cat.commands.map((c) => c.syntax ? `/${c.name} ${escapeHtml(c.syntax)}` : `/${c.name}`).join("\n"));
+      lines.push(cat.commands.map((c) => c.syntax ? `/${c.name} ${escapeHtml(c.syntax)}` : `/${c.name}`).join(" • "));
     }
-    lines.push(
-      "",
-      `<i>Tap a command to run it. Full descriptions: <a href="${COMMANDS_DOCS_URL}">${COMMANDS_DOCS_URL}</a></i>`,
-    );
+
     return lines.join("\n");
   },
 });
