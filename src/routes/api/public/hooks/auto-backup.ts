@@ -31,6 +31,48 @@ type StuckEntry = {
 
 type StuckMap = Record<string, StuckEntry>;
 
+type ManualBackupJob = {
+  backupChatId: number;
+  requesterChatId: number;
+  statusMessageId?: number | null;
+  createdBy?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type ManualBackupJobs = Record<string, ManualBackupJob>;
+
+function backupProgressText(r: {
+  chatId: number;
+  mirrored: number;
+  failed: number;
+  totalAll: number;
+  doneAll: number;
+  pending: number;
+  pct: number;
+  error?: string;
+  skipped?: boolean;
+  nextAttemptAt?: string;
+  stuckAttempts?: number;
+}, nowMs: number): string {
+  const label = `<code>${r.chatId}</code>`;
+  if (r.error) {
+    return `💾 Backup to ${label}\n⚠️ Error: ${r.error.slice(0, 200)}${
+      r.nextAttemptAt ? `\n🔁 Will retry on a later tick.` : ""
+    }`;
+  }
+  if (r.skipped) {
+    const wait = r.nextAttemptAt
+      ? Math.max(0, Math.round((new Date(r.nextAttemptAt).getTime() - nowMs) / 60_000))
+      : 0;
+    return `💾 Backup to ${label}\n⏸ Waiting ${wait}m before retrying. Telegram/backend rate limits need a rest.`;
+  }
+  const tail = r.pending > 0
+    ? `\n\n🔁 <b>${r.pending}</b> post(s) still pending. Continuing automatically on the next backup tick.`
+    : "\n\n✅ All caught up.";
+  return `💾 Backup to ${label}\n${bar(r.pct)}  <b>${r.pct}%</b>\nOverall: <b>${r.doneAll}</b> / ${r.totalAll} mirrored\nLast tick: <b>${r.mirrored}</b> ok, <b>${r.failed}</b> failed${tail}`;
+}
+
 export const Route = createFileRoute("/api/public/hooks/auto-backup")({
   server: {
     handlers: {
@@ -40,11 +82,23 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
         const { sendMessage, editMessageText } = await import("@/lib/bot/telegram");
         const db = getAdminDb();
 
-        // Keep small: Cloudflare Workers wall-time ~30s, each post ~1–2s
-        // (Telegram round-trip + 300ms delay). 8 fits comfortably.
-        const BATCH = 8;
+        // Keep small: many posts include multiple attached files, so larger
+        // chunks can exceed the request time limit before progress is saved.
+        const BATCH = 5;
         const nowIso = new Date().toISOString();
         const nowMs = Date.now();
+
+        const { data: manualJobsRow } = await db
+          .from("bot_settings")
+          .select("value")
+          .eq("key", "manual_backup_jobs")
+          .maybeSingle();
+        const manualJobs = ((manualJobsRow?.value as any) ?? {}) as ManualBackupJobs;
+        const manualChannelIds = new Set(
+          Object.values(manualJobs)
+            .map((job) => Number(job?.backupChatId))
+            .filter((id) => Number.isFinite(id)),
+        );
 
         // Honor pause toggle — /pausebackup sets this flag, /resumebackup clears it.
         const { data: pausedRow } = await db
@@ -52,7 +106,8 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
           .select("value")
           .eq("key", "auto_backup_paused")
           .maybeSingle();
-        if ((pausedRow?.value as { paused?: boolean } | null)?.paused) {
+        const paused = Boolean((pausedRow?.value as { paused?: boolean } | null)?.paused);
+        if (paused && manualChannelIds.size === 0) {
           return Response.json({ ok: true, paused: true });
         }
 
@@ -61,17 +116,23 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
           .select("telegram_chat_id, title")
           .eq("role", "backup");
 
+        const channelsToProcess = (channels ?? []).filter((c) => {
+          const cid = Number(c.telegram_chat_id);
+          if (!Number.isFinite(cid)) return false;
+          return !paused || manualChannelIds.has(cid);
+        });
+
         // Idle short-circuit: if every backup channel is fully caught up,
         // skip the whole tick — no admin DMs, no bookkeeping. The cron
         // effectively sleeps until /backup, /addbackup, or /scandatabase
         // creates new pending work.
-        {
+        if (manualChannelIds.size === 0) {
           const { count: totalPosts } = await db
             .from("posts")
             .select("id", { count: "exact", head: true });
           const total = Number(totalPosts ?? 0);
           let anyPending = false;
-          for (const c of channels ?? []) {
+          for (const c of channelsToProcess) {
             const cid = Number(c.telegram_chat_id);
             if (!Number.isFinite(cid)) continue;
             const { count: done } = await db
@@ -112,7 +173,7 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
           stuckAttempts?: number;
         }> = [];
 
-        for (const c of channels ?? []) {
+        for (const c of channelsToProcess) {
           const cid = Number(c.telegram_chat_id);
           if (!Number.isFinite(cid)) continue;
           const key = String(cid);
@@ -247,6 +308,29 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
         await db
           .from("bot_settings")
           .upsert({ key: "auto_backup_stuck_state", value: stuck }, { onConflict: "key" });
+
+        // Update queued manual /backup status messages and clear finished jobs.
+        let manualJobsChanged = false;
+        for (const r of results) {
+          const key = String(r.chatId);
+          const job = manualJobs[key];
+          if (!job) continue;
+          if (job.requesterChatId && job.statusMessageId) {
+            try {
+              await editMessageText(job.requesterChatId, job.statusMessageId, backupProgressText(r, nowMs));
+            } catch (e: any) {
+              if (!/message is not modified/i.test(String(e?.message))) {
+                console.error("manual backup status edit failed:", e);
+              }
+            }
+          }
+          if (!r.error && !r.skipped && r.totalAll >= 0 && r.pending === 0) {
+            delete manualJobs[key];
+          } else {
+            manualJobs[key] = { ...job, updatedAt: nowIso };
+          }
+          manualJobsChanged = true;
+        }
 
         // Compose the summary message.
         const nowLabel = nowIso.replace("T", " ").slice(0, 19);

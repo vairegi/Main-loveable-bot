@@ -927,7 +927,7 @@ register("listbackup", {
 });
 
 register("backup", {
-  help: "/backup &lt;chat_id&gt; — mirror stored posts to that backup channel with a live progress bar (chunked; re-run to continue)",
+  help: "/backup &lt;chat_id&gt; — start/continue mirroring stored posts to that backup channel with a live progress bar",
   adminOnly: true,
   handler: async ({ db, chatId, user, args }) => {
     const cid = Number(args[0]);
@@ -943,9 +943,10 @@ register("backup", {
       return `❌ <code>${cid}</code> is not registered as a backup channel. Run /addbackup ${cid} first.`;
     }
 
-    // Chunk size — fits inside the Cloudflare Workers wall-time budget with
-    // ~300 ms per post plus per-post subrequests. Increase carefully.
-    const BATCH = 15;
+    // Keep manual command work deliberately small. Many database posts include
+    // multiple attached files, so a bigger chunk can hit the request time limit
+    // before the command has a chance to edit the final status message.
+    const BATCH = 5;
 
     // Send an initial status message we will edit in place with a progress bar.
     let statusMsgId: number | null = null;
@@ -959,11 +960,46 @@ register("backup", {
       return "▓".repeat(filled) + "░".repeat(10 - filled);
     };
 
-    // Loop backupAllToChannel in batches until the queue is empty, the wall-time
-    // budget is exhausted, or a batch makes zero progress. This way a single
-    // /backup call keeps going instead of stopping after the first ~15 posts.
-    const deadline = Date.now() + 50_000;
-    const MAX_BATCHES = 60;
+    // Queue a continuation job. The auto-backup worker will keep processing
+    // this specific channel on cron ticks even when global auto-backup is paused,
+    // so admins do not need to keep sending /backup manually.
+    const nowIso = new Date().toISOString();
+    const { data: jobsRow } = await db
+      .from("bot_settings")
+      .select("value")
+      .eq("key", "manual_backup_jobs")
+      .maybeSingle();
+    const jobs = ((jobsRow?.value as any) ?? {}) as Record<string, any>;
+    const existingJob = jobs[String(cid)] ?? {};
+    jobs[String(cid)] = {
+      backupChatId: cid,
+      requesterChatId: chatId,
+      statusMessageId: statusMsgId,
+      createdBy: user.id,
+      createdAt: existingJob.createdAt ?? nowIso,
+      updatedAt: nowIso,
+    };
+    await db.from("bot_settings").upsert(
+      { key: "manual_backup_jobs", value: jobs, updated_at: nowIso },
+      { onConflict: "key" },
+    );
+
+    // A fresh /backup command should retry immediately, not wait for an older
+    // stuck/backoff timer from a previous transient Telegram/API failure.
+    const { data: stuckRow } = await db
+      .from("bot_settings")
+      .select("value")
+      .eq("key", "auto_backup_stuck_state")
+      .maybeSingle();
+    const stuck = ((stuckRow?.value as any) ?? {}) as Record<string, any>;
+    if (stuck[String(cid)]) {
+      delete stuck[String(cid)];
+      await db.from("bot_settings").upsert(
+        { key: "auto_backup_stuck_state", value: stuck, updated_at: nowIso },
+        { onConflict: "key" },
+      );
+    }
+
     let totalMirrored = 0;
     let totalFailed = 0;
     let totalSkipped = 0;
@@ -974,38 +1010,30 @@ register("backup", {
     let batches = 0;
     let lastEditAt = 0;
 
-    while (batches < MAX_BATCHES) {
-      const r = await backupAllToChannel(db, cid, BATCH, async (p) => {
-        if (!statusMsgId) return;
-        const now = Date.now();
-        if (now - lastEditAt < 1000 && p.processed !== p.totalToDo) return;
-        lastEditAt = now;
-        const runningDone = doneAll + p.doneAll - (batches === 0 ? 0 : 0);
-        const overallDone = p.doneAll;
-        const overallAll = p.totalAll;
-        const pct = overallAll ? Math.floor((overallDone / overallAll) * 100) : 0;
-        const text =
-          `💾 Backup to <code>${cid}</code>\n` +
-          `${bar(pct)}  <b>${pct}%</b>\n` +
-          `Overall: <b>${overallDone}</b> / ${overallAll} mirrored\n` +
-          `This run: ${totalMirrored + p.mirrored} ok, ${totalFailed + p.failed} failed  (batch ${batches + 1})`;
-        try { await editMessageText(chatId, statusMsgId!, text); } catch { /* ignore */ }
-        void runningDone;
-      });
-      batches++;
-      totalMirrored += r.mirrored;
-      totalFailed += r.failed;
-      totalSkipped += r.skipped;
-      totalAll = r.totalAll;
-      doneAll = r.doneAll;
-      totalToDoAll += r.totalToDo;
-      if (r.firstError && !firstError) firstError = r.firstError;
-
-      const remaining = r.totalAll - r.doneAll;
-      if (remaining <= 0) break;
-      if (r.mirrored === 0) break; // no forward motion (flood control / all failing) — stop and let user re-run
-      if (Date.now() > deadline) break;
-    }
+    const r = await backupAllToChannel(db, cid, BATCH, async (p) => {
+      if (!statusMsgId) return;
+      const now = Date.now();
+      if (now - lastEditAt < 4000 && p.processed !== p.totalToDo) return;
+      lastEditAt = now;
+      const overallDone = p.doneAll;
+      const overallAll = p.totalAll;
+      const pct = overallAll ? Math.floor((overallDone / overallAll) * 100) : 0;
+      const text =
+        `💾 Backup to <code>${cid}</code>\n` +
+        `${bar(pct)}  <b>${pct}%</b>\n` +
+        `Overall: <b>${overallDone}</b> / ${overallAll} mirrored\n` +
+        `This run: ${p.mirrored} ok, ${p.failed} failed\n` +
+        `🔁 Continuation is queued automatically.`;
+      try { await editMessageText(chatId, statusMsgId!, text); } catch { /* ignore */ }
+    });
+    batches = 1;
+    totalMirrored = r.mirrored;
+    totalFailed = r.failed;
+    totalSkipped = r.skipped;
+    totalAll = r.totalAll;
+    doneAll = r.doneAll;
+    totalToDoAll = r.totalToDo;
+    if (r.firstError && !firstError) firstError = r.firstError;
 
     await logAction(db, user, "backup_channel", { chatId: cid, mirrored: totalMirrored, failed: totalFailed, batches });
 
@@ -1013,7 +1041,7 @@ register("backup", {
     const remaining = Math.max(0, totalAll - doneAll);
     const err = firstError ? `\n\nFirst error: ${firstError.slice(0, 200)}` : "";
     const more = remaining > 0
-      ? `\n\n▶️ <b>${remaining}</b> post(s) still pending. Run /backup ${cid} again to continue.`
+      ? `\n\n🔁 <b>${remaining}</b> post(s) still pending. Continuation is queued — the backup worker will keep mirroring this channel automatically on the next ticks, even if auto-backup is paused.`
       : `\n\n✅ All caught up.`;
 
     const finalText =
