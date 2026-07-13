@@ -343,6 +343,51 @@ export async function resetBackupTracking(
   return { cleared: count ?? 0 };
 }
 
+// Mark every existing post as already mirrored to a backup channel WITHOUT
+// actually forwarding anything. Use this to undo an accidental /resetbackup
+// when the messages still exist in the backup channel but the tracking rows
+// were cleared. Inserts rows with null backup_message_id (the mirror scanner
+// treats any row for (post_id, backup_chat_id) as "done"). Also clears the
+// failure log so nothing gets retried.
+export async function markAllBackedUp(
+  db: SupabaseClient,
+  backupChatId: number,
+): Promise<{ inserted: number; totalPosts: number; error?: string }> {
+  // Fetch all post ids in chunks (keyset pagination).
+  const CHUNK = 1000;
+  let lastId = 0;
+  let totalPosts = 0;
+  let inserted = 0;
+  for (;;) {
+    const { data: chunk, error } = await db
+      .from("posts")
+      .select("id")
+      .gt("id", lastId)
+      .order("id", { ascending: true })
+      .limit(CHUNK);
+    if (error) return { inserted, totalPosts, error: error.message };
+    if (!chunk || chunk.length === 0) break;
+    totalPosts += chunk.length;
+    lastId = Number(chunk[chunk.length - 1].id);
+
+    const rows = chunk.map((p) => ({
+      post_id: Number(p.id),
+      backup_chat_id: backupChatId,
+      backup_message_id: null as number | null,
+    }));
+    const { error: upErr, count } = await db
+      .from("backup_copies")
+      .upsert(rows, { onConflict: "post_id,backup_chat_id", count: "exact", ignoreDuplicates: false });
+    if (upErr) return { inserted, totalPosts, error: upErr.message };
+    inserted += count ?? rows.length;
+
+    if (chunk.length < CHUNK) break;
+  }
+  // Clear failure log for this channel too.
+  await db.from("backup_failures").delete().eq("backup_chat_id", backupChatId);
+  return { inserted, totalPosts };
+}
+
 // Remove a backup channel registration (and its mirror-tracking rows).
 export async function removeBackupChannel(
   db: SupabaseClient,
