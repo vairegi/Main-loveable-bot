@@ -597,6 +597,7 @@ export type Database = {
       }
       get_missing_backup_posts: {
         Args: {
+          _after_post_id?: number
           _backup_chat_id: number
           _limit?: number
           _max_failed_attempts?: number
