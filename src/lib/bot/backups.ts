@@ -200,6 +200,7 @@ export async function backupAllToChannel(
   let firstError: string | undefined;
   let processed = 0;
   const skippedIds: number[] = [];
+  let lastScannedPostId = 0;
 
   outer: while (typeof limit !== "number" || processed < limit) {
     const batchSize = typeof limit === "number" ? Math.min(CHUNK_SIZE, Math.max(limit - processed, 1)) : CHUNK_SIZE;
@@ -207,6 +208,7 @@ export async function backupAllToChannel(
       _backup_chat_id: backupChatId,
       _max_failed_attempts: maxFailedAttempts,
       _limit: batchSize,
+      _after_post_id: lastScannedPostId,
     });
 
     if (error) {
@@ -217,6 +219,7 @@ export async function backupAllToChannel(
 
     for (const p of chunk) {
       const pid = Number(p.id);
+      lastScannedPostId = Math.max(lastScannedPostId, pid);
       if (exhaustedIds.has(pid)) continue;
       if (typeof limit === "number" && processed >= limit) break outer;
 
