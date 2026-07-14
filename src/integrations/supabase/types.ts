@@ -586,6 +586,31 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_backup_progress_counts: {
+        Args: { _backup_chat_id: number; _max_failed_attempts?: number }
+        Returns: {
+          already_done: number
+          already_exhausted: number
+          total_all: number
+          total_to_do: number
+        }[]
+      }
+      get_missing_backup_posts: {
+        Args: {
+          _backup_chat_id: number
+          _limit?: number
+          _max_failed_attempts?: number
+        }
+        Returns: {
+          caption: string
+          created_at: string
+          extra_files: Json
+          id: number
+          media: Json
+          source_chat_id: number
+          source_message_id: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
