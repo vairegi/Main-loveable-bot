@@ -50,15 +50,6 @@ async function listBackupChannels(db: SupabaseClient): Promise<number[]> {
   return (data ?? []).map((c) => Number(c.telegram_chat_id)).filter((n) => Number.isFinite(n));
 }
 
-// Return post ids already mirrored to a given backup channel
-async function alreadyMirroredSet(db: SupabaseClient, backupChatId: number): Promise<Set<number>> {
-  const { data } = await db
-    .from("backup_copies")
-    .select("post_id")
-    .eq("backup_chat_id", backupChatId);
-  return new Set((data ?? []).map((r) => Number(r.post_id)));
-}
-
 function isTransientTgError(msg: string): boolean {
   return /429|retry_after|too many requests|flood|network error|gateway 5\d\d|timeout|ETIMEDOUT|ECONNRESET|non-JSON body/i.test(msg);
 }
@@ -143,11 +134,9 @@ async function mirrorOne(
 // - `onProgress` fires after each post attempt with progress metrics.
 // - Adds a small delay between posts to avoid Telegram flood control.
 //
-// Keyset pagination: instead of loading ALL posts up front (slow + memory-heavy
-// once the table grows past a few thousand rows), we scan in chunks of
-// `CHUNK_SIZE` using `WHERE id > lastId ORDER BY id`. The mirrored / failure
-// maps are still loaded once because they are small (bounded by this channel's
-// activity), and we consult them in-memory per chunk.
+// Database-side missing-post lookup: instead of loading ALL posts and ALL
+// mirrored ids into memory, Postgres uses indexed NOT EXISTS checks and returns
+// only the next small batch that still needs backing up for this channel.
 export async function backupAllToChannel(
   db: SupabaseClient,
   backupChatId: number,
@@ -165,18 +154,32 @@ export async function backupAllToChannel(
 ): Promise<BackupResult & { totalAll: number; totalToDo: number; doneAll: number; skippedIds: number[] }> {
   const CHUNK_SIZE = 500;
 
-  // Total post count (cheap head query — no rows returned).
-  const { count: totalAllRaw } = await db
-    .from("posts")
-    .select("id", { count: "exact", head: true });
-  const totalAll = totalAllRaw ?? 0;
+  const { data: progressRows, error: progressError } = await db.rpc("get_backup_progress_counts", {
+    _backup_chat_id: backupChatId,
+    _max_failed_attempts: maxFailedAttempts,
+  });
+  if (progressError) {
+    return {
+      mirrored: 0,
+      skipped: 0,
+      failed: 1,
+      firstError: progressError.message,
+      totalAll: 0,
+      totalToDo: 0,
+      doneAll: 0,
+      skippedIds: [],
+    };
+  }
+
+  const progress = Array.isArray(progressRows) ? progressRows[0] : progressRows;
+  const totalAll = Number(progress?.total_all ?? 0);
+  const alreadyDone = Number(progress?.already_done ?? 0);
+  const alreadyExhausted = Number(progress?.already_exhausted ?? 0);
+  const totalToDo = Number(progress?.total_to_do ?? 0);
 
   if (totalAll === 0) {
     return { mirrored: 0, skipped: 0, failed: 0, totalAll: 0, totalToDo: 0, doneAll: 0, skippedIds: [] };
   }
-
-  const done = await alreadyMirroredSet(db, backupChatId);
-  const alreadyDone = done.size;
 
   const { data: failRows } = await db
     .from("backup_failures")
@@ -188,9 +191,6 @@ export async function backupAllToChannel(
   const exhaustedIds = new Set<number>(
     Array.from(failMap.entries()).filter(([, n]) => n >= maxFailedAttempts).map(([id]) => id),
   );
-  const alreadyExhausted = Array.from(exhaustedIds).filter((id) => !done.has(id)).length;
-
-  const totalToDo = Math.max(0, totalAll - alreadyDone - alreadyExhausted);
 
   let mirrored = 0;
   let skipped = 0;
@@ -198,37 +198,33 @@ export async function backupAllToChannel(
   let firstError: string | undefined;
   let processed = 0;
   const skippedIds: number[] = [];
+  let lastScannedPostId = 0;
 
-  // Keyset cursor: fetch posts with id > lastId, ascending, in fixed-size chunks.
-  let lastId = 0;
-  let exhaustedChunks = false;
-
-  outer: while (!exhaustedChunks) {
-    const { data: chunk, error } = await db
-      .from("posts")
-      .select("id, source_chat_id, source_message_id, extra_files, media, caption, created_at")
-      .gt("id", lastId)
-      .order("id", { ascending: true })
-      .limit(CHUNK_SIZE);
+  outer: while (typeof limit !== "number" || processed < limit) {
+    const batchSize = typeof limit === "number" ? Math.min(CHUNK_SIZE, Math.max(limit - processed, 1)) : CHUNK_SIZE;
+    const { data: chunk, error } = await db.rpc("get_missing_backup_posts", {
+      _backup_chat_id: backupChatId,
+      _max_failed_attempts: maxFailedAttempts,
+      _limit: batchSize,
+      _after_post_id: lastScannedPostId,
+    });
 
     if (error) {
       firstError = firstError ?? error.message;
       break;
     }
     if (!chunk || chunk.length === 0) break;
-    if (chunk.length < CHUNK_SIZE) exhaustedChunks = true;
-    lastId = Number(chunk[chunk.length - 1].id);
 
     for (const p of chunk) {
       const pid = Number(p.id);
-      if (done.has(pid) || exhaustedIds.has(pid)) continue;
+      lastScannedPostId = Math.max(lastScannedPostId, pid);
+      if (exhaustedIds.has(pid)) continue;
       if (typeof limit === "number" && processed >= limit) break outer;
 
       const r = await mirrorOne(db, p, backupChatId);
       processed++;
       if (r.ok) {
         mirrored++;
-        done.add(pid);
         if (failMap.has(pid)) {
           await db.from("backup_failures").delete().eq("post_id", pid).eq("backup_chat_id", backupChatId);
         }
