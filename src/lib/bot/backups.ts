@@ -134,11 +134,9 @@ async function mirrorOne(
 // - `onProgress` fires after each post attempt with progress metrics.
 // - Adds a small delay between posts to avoid Telegram flood control.
 //
-// Keyset pagination: instead of loading ALL posts up front (slow + memory-heavy
-// once the table grows past a few thousand rows), we scan in chunks of
-// `CHUNK_SIZE` using `WHERE id > lastId ORDER BY id`. The mirrored / failure
-// maps are still loaded once because they are small (bounded by this channel's
-// activity), and we consult them in-memory per chunk.
+// Database-side missing-post lookup: instead of loading ALL posts and ALL
+// mirrored ids into memory, Postgres uses indexed NOT EXISTS checks and returns
+// only the next small batch that still needs backing up for this channel.
 export async function backupAllToChannel(
   db: SupabaseClient,
   backupChatId: number,
