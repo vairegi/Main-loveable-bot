@@ -192,7 +192,87 @@ export async function handleDatabaseChannelPost(db: SupabaseClient, msg: any): P
 }
 
 // -------- Drip: publish the next N queued posts to all main channels --------
-export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<{ posted: number; failed: number; drained: boolean; failures: DripFailure[] }> {
+// Recognize "source message is gone / unreachable" errors from Telegram.
+// These posts can never be published — archive them so they stop blocking
+// the queue head, and notify the admin log channel with a source link.
+function isSourceGoneError(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : String(e ?? "");
+  return /message to copy not found|message not found|MESSAGE_ID_INVALID|chat not found|wasn'?t found|CHANNEL_INVALID|PEER_ID_INVALID/i.test(m);
+}
+
+// Build a t.me link for a source message (private supergroups/channels use
+// the /c/<internalId>/<messageId> form). Returns null if we can't build one.
+function buildSourceMessageLink(sourceChatId: unknown, sourceMessageId: unknown): string | null {
+  const chat = typeof sourceChatId === "number" ? sourceChatId : Number(sourceChatId);
+  const msg = typeof sourceMessageId === "number" ? sourceMessageId : Number(sourceMessageId);
+  if (!Number.isFinite(chat) || !Number.isFinite(msg)) return null;
+  const s = String(chat);
+  if (s.startsWith("-100")) return `https://t.me/c/${s.slice(4)}/${msg}`;
+  return null;
+}
+
+type MissingRef = {
+  id: number;
+  code?: string;
+  source_chat_id?: number;
+  source_message_id?: number;
+  caption?: string;
+  reason: string;
+};
+
+async function notifyAdminOfMissingPosts(db: SupabaseClient, missing: MissingRef[]): Promise<void> {
+  if (!missing.length) return;
+  const { data: setting } = await db
+    .from("bot_settings")
+    .select("value")
+    .eq("key", "log_channel_id")
+    .maybeSingle();
+  const logChannelId = (setting?.value as any)?.chat_id;
+  if (!logChannelId) return;
+
+  const lines = missing.slice(0, 30).map((p) => {
+    const link = buildSourceMessageLink(p.source_chat_id, p.source_message_id);
+    const label = `#${p.id}${p.code ? ` (<code>${p.code}</code>)` : ""}`;
+    const cap = (p.caption ?? "").slice(0, 60).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const capPart = cap ? ` — ${cap}` : "";
+    return link
+      ? `• ${label} — <a href="${link}">source msg</a>${capPart}`
+      : `• ${label} — chat <code>${p.source_chat_id ?? "?"}</code> / msg <code>${p.source_message_id ?? "?"}</code>${capPart}`;
+  });
+  const more = missing.length > 30 ? `\n…and ${missing.length - 30} more` : "";
+  const body =
+    `⚠️ <b>Drip: ${missing.length} queued post(s) removed</b>\n` +
+    `The original message in the database channel is gone (deleted, or the bot lost access). ` +
+    `They can never be published, so they've been moved to the deleted-posts archive to unblock the queue.\n\n` +
+    lines.join("\n") + more;
+  try {
+    await sendMessage(logChannelId, body);
+  } catch {
+    /* log channel unreachable — ignore */
+  }
+}
+
+// Archive a queued post that can never be published, then delete it from posts.
+async function quarantineMissingPost(db: SupabaseClient, post: any): Promise<void> {
+  await db.from("deleted_posts").insert({
+    original_post_id: post.id,
+    code: post.code,
+    source_chat_id: post.source_chat_id,
+    source_message_id: post.source_message_id,
+    caption: post.caption,
+    media: post.media,
+    extra_files: post.extra_files,
+    media_group_id: post.media_group_id,
+    fetch_count: post.fetch_count ?? 0,
+    created_by: post.created_by,
+    original_created_at: post.created_at,
+    original_posted_at: null,
+    deleted_by: null,
+  });
+  await db.from("posts").delete().eq("id", post.id);
+}
+
+export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<{ posted: number; failed: number; drained: boolean; failures: DripFailure[]; quarantined: number }> {
   const { data: queue } = await db
     .from("posts")
     .select("*")
@@ -201,11 +281,12 @@ export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<
     .order("id", { ascending: true })
     .limit(batchSize);
 
-  if (!queue?.length) return { posted: 0, failed: 0, drained: true, failures: [] };
+  if (!queue?.length) return { posted: 0, failed: 0, drained: true, failures: [], quarantined: 0 };
 
   let posted = 0;
   let failed = 0;
   const failures: DripFailure[] = [];
+  const missing: MissingRef[] = [];
 
   for (const post of queue) {
     try {
@@ -214,11 +295,31 @@ export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<
       posted++;
     } catch (e) {
       console.error("Drip publish failed:", post.id, e);
+      const reason = dripFailureReason(e);
+      if (isSourceGoneError(e)) {
+        try {
+          await quarantineMissingPost(db, post);
+          missing.push({
+            id: post.id,
+            code: post.code,
+            source_chat_id: post.source_chat_id,
+            source_message_id: post.source_message_id,
+            caption: post.caption,
+            reason,
+          });
+          continue;
+        } catch (archiveErr) {
+          console.error("Quarantine failed for post", post.id, archiveErr);
+        }
+      }
       failed++;
-      failures.push({ id: post.id, code: post.code, reason: dripFailureReason(e) });
+      failures.push({ id: post.id, code: post.code, reason });
     }
   }
-  return { posted, failed, drained: queue.length < batchSize, failures };
+
+  await notifyAdminOfMissingPosts(db, missing);
+
+  return { posted, failed, drained: queue.length < batchSize, failures, quarantined: missing.length };
 }
 
 export async function getPostPosition(db: SupabaseClient, post: { id?: number | string; created_at: string }): Promise<number> {

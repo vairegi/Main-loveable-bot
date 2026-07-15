@@ -770,7 +770,8 @@ register("dripnow", {
     const failureText = r.failures?.length
       ? `\n\nFirst error: ${r.failures[0].reason}${r.failures[0].code ? `\nCode: <code>${r.failures[0].code}</code>` : ""}`
       : "";
-    return `📤 Drip complete — posted ${r.posted}, failed ${r.failed}.${failureText}`;
+    const quarantinedText = r.quarantined ? ` · 🗑 removed ${r.quarantined} (source gone)` : "";
+    return `📤 Drip complete — posted ${r.posted}, failed ${r.failed}${quarantinedText}.${failureText}`;
   },
 });
 
