@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_posts_created_at ON public.posts (created_at);
