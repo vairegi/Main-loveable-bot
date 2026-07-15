@@ -860,8 +860,3 @@ export async function queueSize(db: SupabaseClient): Promise<number> {
   const { count } = await db.from("posts").select("*", { count: "exact", head: true }).is("posted_at", null);
   return count ?? 0;
 }
-
-export async function queueSize(db: SupabaseClient): Promise<number> {
-  const { count } = await db.from("posts").select("*", { count: "exact", head: true }).is("posted_at", null);
-  return count ?? 0;
-}
