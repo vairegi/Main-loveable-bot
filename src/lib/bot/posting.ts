@@ -709,10 +709,15 @@ export async function resetAllPostedPosts(db: SupabaseClient): Promise<{ reset: 
 }
 
 // -------- Schedule types & helpers --------
+// `pending` tracks an in-flight slot so the drip hook can publish in small
+// chunks across successive Worker invocations without losing progress if any
+// single Worker times out. The slot is only added to `done_slots` after all
+// posts for it have been processed.
+export type PendingSlot = { date: string; slot: string; remaining: number };
 export type Schedule =
   | { enabled: false }
-  | { enabled: true; mode: "interval"; interval_minutes: number; batch_size: number; last_drip_at?: string | null }
-  | { enabled: true; mode: "times"; times: string[]; per_slot: number; tz_offset_minutes: number; slots_done_for?: string /* YYYY-MM-DD */; done_slots?: string[] };
+  | { enabled: true; mode: "interval"; interval_minutes: number; batch_size: number; last_drip_at?: string | null; pending?: PendingSlot }
+  | { enabled: true; mode: "times"; times: string[]; per_slot: number; tz_offset_minutes: number; slots_done_for?: string /* YYYY-MM-DD */; done_slots?: string[]; pending?: PendingSlot };
 
 export async function getSchedule(db: SupabaseClient): Promise<Schedule> {
   const v = await getSetting<Schedule>(db, "schedule");
@@ -723,19 +728,39 @@ export async function saveSchedule(db: SupabaseClient, s: Schedule): Promise<voi
   await setSetting(db, "schedule", s);
 }
 
-// Decide how many posts to drip right now and update bookkeeping.
-export async function computeDripBatch(db: SupabaseClient): Promise<number> {
+export interface DripDecision {
+  batchSize: number;
+  slotKey?: string; // e.g. "2026-07-15|07:00" — pass to commitSlotProgress
+}
+
+// Decide how many posts to drip right now, WITHOUT marking the slot as done.
+// The slot only advances (or gets removed from pending) once
+// `commitSlotProgress` is called with the number of posts actually processed.
+export async function computeDripDecision(db: SupabaseClient, chunkSize: number): Promise<DripDecision> {
   const sched = await getSchedule(db);
-  if (!sched.enabled) return 0;
+  if (!sched.enabled) return { batchSize: 0 };
+  if (chunkSize <= 0) chunkSize = 5;
 
   const now = new Date();
 
   if (sched.mode === "interval") {
+    // Resume an in-flight interval batch first.
+    if (sched.pending && sched.pending.remaining > 0) {
+      return {
+        batchSize: Math.min(sched.pending.remaining, chunkSize),
+        slotKey: `interval|${sched.pending.date}|${sched.pending.slot}`,
+      };
+    }
     const last = sched.last_drip_at ? new Date(sched.last_drip_at) : null;
     const dueAt = last ? new Date(last.getTime() + sched.interval_minutes * 60_000) : now;
-    if (now < dueAt) return 0;
-    await saveSchedule(db, { ...sched, last_drip_at: now.toISOString() });
-    return sched.batch_size;
+    if (now < dueAt) return { batchSize: 0 };
+    const token = now.toISOString();
+    await saveSchedule(db, {
+      ...sched,
+      last_drip_at: token,
+      pending: { date: token.slice(0, 10), slot: token, remaining: sched.batch_size },
+    });
+    return { batchSize: Math.min(sched.batch_size, chunkSize), slotKey: `interval|${token.slice(0, 10)}|${token}` };
   }
 
   if (sched.mode === "times") {
@@ -746,10 +771,18 @@ export async function computeDripBatch(db: SupabaseClient): Promise<number> {
     const dd = String(local.getUTCDate()).padStart(2, "0");
     const dateKey = `${yyyy}-${mm}-${dd}`;
     const nowMinutes = local.getUTCHours() * 60 + local.getUTCMinutes();
-
     const doneSlots = sched.slots_done_for === dateKey ? (sched.done_slots ?? []) : [];
 
-    // Find first slot whose scheduled minute is <= now and not yet marked done today
+    // 1) Resume an in-flight slot from today first.
+    const pending = sched.pending;
+    if (pending && pending.date === dateKey && pending.remaining > 0) {
+      return {
+        batchSize: Math.min(pending.remaining, chunkSize),
+        slotKey: `${dateKey}|${pending.slot}`,
+      };
+    }
+
+    // 2) Otherwise claim the first due, unfinished slot for today.
     for (const t of sched.times) {
       const [h, m] = t.split(":").map((x) => Number(x));
       if (!Number.isFinite(h) || !Number.isFinite(m)) continue;
@@ -757,16 +790,70 @@ export async function computeDripBatch(db: SupabaseClient): Promise<number> {
       if (nowMinutes >= slotMin && !doneSlots.includes(t)) {
         await saveSchedule(db, {
           ...sched,
-          slots_done_for: dateKey,
-          done_slots: [...doneSlots, t],
+          pending: { date: dateKey, slot: t, remaining: sched.per_slot },
         });
-        return sched.per_slot;
+        return { batchSize: Math.min(sched.per_slot, chunkSize), slotKey: `${dateKey}|${t}` };
       }
     }
-    return 0;
+    return { batchSize: 0 };
   }
 
-  return 0;
+  return { batchSize: 0 };
+}
+
+// Legacy shim — some callers may still use this. Prefer computeDripDecision.
+export async function computeDripBatch(db: SupabaseClient): Promise<number> {
+  return (await computeDripDecision(db, 5)).batchSize;
+}
+
+// Record how many posts we actually processed for the currently-pending slot.
+// Returns { finished: true } when the slot is fully drained and we've moved it
+// into `done_slots`.
+export async function commitSlotProgress(
+  db: SupabaseClient,
+  slotKey: string | undefined,
+  processed: number,
+): Promise<{ finished: boolean }> {
+  if (!slotKey || processed <= 0) return { finished: false };
+  const sched = await getSchedule(db);
+  if (!sched.enabled) return { finished: false };
+
+  // interval mode carries its own pending; times mode uses date|slot
+  if (sched.mode === "interval") {
+    if (!slotKey.startsWith("interval|")) return { finished: false };
+    const pending = sched.pending;
+    if (!pending) return { finished: false };
+    const remaining = Math.max(pending.remaining - processed, 0);
+    if (remaining <= 0) {
+      const { pending: _drop, ...rest } = sched;
+      await saveSchedule(db, rest as Schedule);
+      return { finished: true };
+    }
+    await saveSchedule(db, { ...sched, pending: { ...pending, remaining } });
+    return { finished: false };
+  }
+
+  if (sched.mode === "times") {
+    const [dateKey, slot] = slotKey.split("|");
+    const pending = sched.pending;
+    if (!pending || pending.date !== dateKey || pending.slot !== slot) return { finished: false };
+    const remaining = Math.max(pending.remaining - processed, 0);
+    if (remaining <= 0) {
+      const doneSlots = sched.slots_done_for === dateKey ? (sched.done_slots ?? []) : [];
+      const { pending: _drop, ...rest } = sched;
+      await saveSchedule(db, {
+        ...(rest as Schedule),
+        // TS: we know mode is "times"
+        slots_done_for: dateKey,
+        done_slots: doneSlots.includes(slot) ? doneSlots : [...doneSlots, slot],
+      } as Schedule);
+      return { finished: true };
+    }
+    await saveSchedule(db, { ...sched, pending: { ...pending, remaining } });
+    return { finished: false };
+  }
+
+  return { finished: false };
 }
 
 export async function queueSize(db: SupabaseClient): Promise<number> {
