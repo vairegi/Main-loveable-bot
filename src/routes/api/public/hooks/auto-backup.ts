@@ -126,7 +126,47 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
         // skip the whole tick — no admin DMs, no bookkeeping. The cron
         // effectively sleeps until /backup, /addbackup, or /scandatabase
         // creates new pending work.
+        //
+        // Fast path: if the previous tick already proved "idle" and nothing
+        // has changed since (no new posts, same set of backup channels), we
+        // return immediately without running the expensive full-table counts.
+        // That kills the top offenders in pg_stat_statements — the
+        // `count(posts)` and `count(backup_copies)` scans that ran on every
+        // tick per channel — while still catching up the moment any new post
+        // is ingested.
         if (manualChannelIds.size === 0) {
+          const channelKey = channelsToProcess
+            .map((c) => Number(c.telegram_chat_id))
+            .filter((n) => Number.isFinite(n))
+            .sort((a, b) => a - b)
+            .join(",");
+
+          const { data: maxPostRow } = await db
+            .from("posts")
+            .select("id")
+            .order("id", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const currentMaxPostId = Number(maxPostRow?.id ?? 0);
+
+          const { data: idleRow } = await db
+            .from("bot_settings")
+            .select("value")
+            .eq("key", "auto_backup_idle_state")
+            .maybeSingle();
+          const idleState = (idleRow?.value as {
+            maxPostId?: number;
+            channelKey?: string;
+          } | null) ?? null;
+
+          if (
+            idleState &&
+            idleState.channelKey === channelKey &&
+            Number(idleState.maxPostId ?? -1) === currentMaxPostId
+          ) {
+            return Response.json({ ok: true, idle: true, fastPath: true });
+          }
+
           const { count: totalPosts } = await db
             .from("posts")
             .select("id", { count: "exact", head: true });
@@ -147,7 +187,20 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
             if (Number(done ?? 0) + Number(exhausted ?? 0) < total) { anyPending = true; break; }
           }
           if (!anyPending) {
+            await db.from("bot_settings").upsert(
+              {
+                key: "auto_backup_idle_state",
+                value: { maxPostId: currentMaxPostId, channelKey, computedAt: nowIso },
+              },
+              { onConflict: "key" },
+            );
             return Response.json({ ok: true, idle: true, totalPosts: total });
+          }
+
+          // Not idle anymore — clear any stale cache so we don't fast-path
+          // over real pending work later.
+          if (idleState) {
+            await db.from("bot_settings").delete().eq("key", "auto_backup_idle_state");
           }
         }
 
