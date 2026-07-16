@@ -1,0 +1,2 @@
+GRANT EXECUTE ON FUNCTION public.get_backup_progress_counts(bigint, integer) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_missing_backup_posts(bigint, integer, integer, bigint) TO anon, authenticated;
