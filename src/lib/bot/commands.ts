@@ -1735,14 +1735,26 @@ register("broadcast", {
     }
 
     if (blockedUsers.length) {
+      const reason = "Telegram delivery failed: blocked bot or chat unavailable";
       await db
         .from("bot_users")
         .update({
           banned: true,
-          banned_reason: "Telegram delivery failed: blocked bot or chat unavailable",
+          banned_reason: reason,
           banned_at: new Date().toISOString(),
         })
         .in("telegram_user_id", blockedUsers);
+
+      // Ping admins that the bot auto-banned these users.
+      try {
+        const blockedSet = new Set(blockedUsers);
+        const blockedRows = failures
+          .filter((f) => f.blocked && blockedSet.has(f.user.telegram_user_id))
+          .map((f) => f.user);
+        await notifyAdminsOfAutoBan(db, blockedRows, reason, chatId);
+      } catch (e) {
+        console.error("notifyAdminsOfAutoBan failed:", e);
+      }
     }
 
     const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
