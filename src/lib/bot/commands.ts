@@ -138,6 +138,38 @@ function formatFailureLine(u: BroadcastUser, reason: string, blocked: boolean): 
   return `${badge} <code>${u.telegram_user_id}</code> ${name} — ${escapeHtml(reason.slice(0, 200))}`;
 }
 
+// Notify all admins when the bot auto-bans users (e.g. blocked-bot during broadcast).
+async function notifyAdminsOfAutoBan(
+  db: SupabaseClient,
+  banned: BroadcastUser[],
+  reason: string,
+  skipChatId?: number,
+): Promise<void> {
+  if (!banned.length) return;
+  const { data: admins } = await db.from("admins").select("telegram_user_id");
+  const adminIds = (admins ?? [])
+    .map((a: any) => Number(a.telegram_user_id))
+    .filter((id) => Number.isFinite(id) && id !== skipChatId);
+  if (!adminIds.length) return;
+
+  const lines = banned.slice(0, 30).map((u) => {
+    const name = u.username ? `@${escapeHtml(u.username)}` : (u.first_name ? escapeHtml(u.first_name) : "—");
+    return `• <code>${u.telegram_user_id}</code> ${name}`;
+  });
+  const more = banned.length > 30 ? `\n…and ${banned.length - 30} more` : "";
+  const text =
+    `🚫 <b>Bot auto-banned ${banned.length} user${banned.length === 1 ? "" : "s"}</b>\n` +
+    `<i>Reason:</i> ${escapeHtml(reason)}\n\n${lines.join("\n")}${more}`;
+
+  for (const adminId of adminIds) {
+    try {
+      await sendMessage(adminId, text);
+    } catch (e) {
+      console.error(`notifyAdminsOfAutoBan → admin ${adminId} failed:`, e);
+    }
+  }
+}
+
 // ---------------- Commands ----------------
 
 register("start", {
@@ -1735,14 +1767,26 @@ register("broadcast", {
     }
 
     if (blockedUsers.length) {
+      const reason = "Telegram delivery failed: blocked bot or chat unavailable";
       await db
         .from("bot_users")
         .update({
           banned: true,
-          banned_reason: "Telegram delivery failed: blocked bot or chat unavailable",
+          banned_reason: reason,
           banned_at: new Date().toISOString(),
         })
         .in("telegram_user_id", blockedUsers);
+
+      // Ping admins that the bot auto-banned these users.
+      try {
+        const blockedSet = new Set(blockedUsers);
+        const blockedRows = failures
+          .filter((f) => f.blocked && blockedSet.has(f.user.telegram_user_id))
+          .map((f) => f.user);
+        await notifyAdminsOfAutoBan(db, blockedRows, reason, chatId);
+      } catch (e) {
+        console.error("notifyAdminsOfAutoBan failed:", e);
+      }
     }
 
     const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
