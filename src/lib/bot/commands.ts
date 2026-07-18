@@ -42,7 +42,9 @@ export interface CmdCtx {
   isAdmin: boolean;
   isSuperAdmin: boolean;
   message?: any;
+  origin?: string;
 }
+
 
 
 type Handler = (ctx: CmdCtx) => Promise<string | null>;
