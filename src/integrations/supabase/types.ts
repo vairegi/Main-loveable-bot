@@ -193,6 +193,66 @@ export type Database = {
         }
         Relationships: []
       }
+      broadcast_jobs: {
+        Row: {
+          blocked_ids: Json
+          cursor_user_id: number
+          failure_samples: Json
+          finished_at: string | null
+          id: number
+          initiator_chat_id: number
+          initiator_user_id: number
+          initiator_username: string | null
+          last_tick_at: string | null
+          mode: string
+          payload_text: string | null
+          source_chat_id: number | null
+          source_message_id: number | null
+          started_at: string
+          status: string
+          total_failed: number
+          total_ok: number
+        }
+        Insert: {
+          blocked_ids?: Json
+          cursor_user_id?: number
+          failure_samples?: Json
+          finished_at?: string | null
+          id?: number
+          initiator_chat_id: number
+          initiator_user_id: number
+          initiator_username?: string | null
+          last_tick_at?: string | null
+          mode: string
+          payload_text?: string | null
+          source_chat_id?: number | null
+          source_message_id?: number | null
+          started_at?: string
+          status?: string
+          total_failed?: number
+          total_ok?: number
+        }
+        Update: {
+          blocked_ids?: Json
+          cursor_user_id?: number
+          failure_samples?: Json
+          finished_at?: string | null
+          id?: number
+          initiator_chat_id?: number
+          initiator_user_id?: number
+          initiator_username?: string | null
+          last_tick_at?: string | null
+          mode?: string
+          payload_text?: string | null
+          source_chat_id?: number | null
+          source_message_id?: number | null
+          started_at?: string
+          status?: string
+          total_failed?: number
+          total_ok?: number
+        }
+        Relationships: []
+      }
       channels: {
         Row: {
           added_by: number | null
