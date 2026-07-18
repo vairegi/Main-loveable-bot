@@ -151,11 +151,13 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           user,
           args,
           rawText: text,
-          rawHtml,
+          rawHtml: rawHtml,
           isAdmin: !!adminRow,
           isSuperAdmin: !!adminRow?.is_super_admin,
           message,
+          origin: new URL(request.url).origin,
         };
+
 
 
         try {
