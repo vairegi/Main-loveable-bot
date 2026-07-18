@@ -42,7 +42,9 @@ export interface CmdCtx {
   isAdmin: boolean;
   isSuperAdmin: boolean;
   message?: any;
+  origin?: string;
 }
+
 
 
 type Handler = (ctx: CmdCtx) => Promise<string | null>;
@@ -1720,7 +1722,7 @@ register("doctor", {
 register("broadcast", {
   help: "/broadcast &lt;text&gt; — send text to every user (formatting supported). Or reply to any message (including a forwarded channel post) with /broadcast to forward it to everyone, preserving the original channel tag.",
   adminOnly: true,
-  handler: async ({ db, user, chatId, rawHtml, message }) => {
+  handler: async ({ db, user, chatId, rawHtml, message, origin }) => {
     const text = rawHtml.replace(/^\/broadcast(@\S+)?\s*/i, "").trim();
     const reply = message?.reply_to_message;
 
@@ -1732,129 +1734,64 @@ register("broadcast", {
       ].join("\n");
     }
 
-    const { users, error: targetError } = await loadBroadcastTargets(db);
-    if (targetError) return `❌ I couldn't load broadcast users: ${targetError}`;
-    if (!users.length) return "ℹ️ No users to broadcast to yet.";
-
-    const startedAt = Date.now();
-    let ok = 0;
-    let failed = 0;
-    const failures: { user: BroadcastUser; reason: string; blocked: boolean }[] = [];
-    const blockedUsers: number[] = [];
-
-    for (let i = 0; i < users.length; i++) {
-      const u = users[i];
-      try {
-        if (reply) {
-          // forwardMessage keeps the original "Forwarded from <channel>" header
-          // when the replied message was itself forwarded from a channel.
-          await forwardMessage(u.telegram_user_id, chatId, reply.message_id, { disable_notification: false });
-        } else {
-          await sendMessage(u.telegram_user_id, text);
-        }
-        ok++;
-      } catch (e: any) {
-        failed++;
-        const err = String(e?.message ?? e ?? "unknown");
-        const isBlocked = /\b403\b|bot was blocked|user is deactivated|chat not found|bot can't initiate/i.test(err);
-        failures.push({ user: u, reason: err, blocked: isBlocked });
-        if (isBlocked) blockedUsers.push(u.telegram_user_id);
-      }
-
-      // Telegram allows roughly 30 messages/sec globally. Keep a safe pace and
-      // avoid a long pause after the final send.
-      if (i < users.length - 1) await wait(40);
+    // Refuse if another broadcast is still running so reports don't clash.
+    const { data: existing } = await db
+      .from("broadcast_jobs")
+      .select("id, status, total_ok, total_failed")
+      .in("status", ["pending", "running"])
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      return `⏳ Another broadcast (job #${existing.id}) is still running (delivered ${existing.total_ok}, failed ${existing.total_failed}). Wait for its report, then try again.`;
     }
 
-    if (blockedUsers.length) {
-      const reason = "Telegram delivery failed: blocked bot or chat unavailable";
-      await db
-        .from("bot_users")
-        .update({
-          banned: true,
-          banned_reason: reason,
-          banned_at: new Date().toISOString(),
-        })
-        .in("telegram_user_id", blockedUsers);
+    // Count eligible recipients for the ack message.
+    const { count: recipients } = await db
+      .from("bot_users")
+      .select("telegram_user_id", { count: "exact", head: true })
+      .eq("banned", false);
 
-      // Ping admins that the bot auto-banned these users.
-      try {
-        const blockedSet = new Set(blockedUsers);
-        const blockedRows = failures
-          .filter((f) => f.blocked && blockedSet.has(f.user.telegram_user_id))
-          .map((f) => f.user);
-        await notifyAdminsOfAutoBan(db, blockedRows, reason, chatId);
-      } catch (e) {
-        console.error("notifyAdminsOfAutoBan failed:", e);
-      }
-    }
+    const { data: job, error: insErr } = await db
+      .from("broadcast_jobs")
+      .insert({
+        mode: reply ? "forward" : "text",
+        payload_text: reply ? null : text,
+        source_chat_id: reply ? chatId : null,
+        source_message_id: reply ? reply.message_id : null,
+        initiator_chat_id: chatId,
+        initiator_user_id: user.id,
+        initiator_username: user.username ?? null,
+      })
+      .select("id")
+      .single();
 
-    const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
-    const successRate = users.length ? ((ok / users.length) * 100).toFixed(1) : "0.0";
-    const otherFailed = failures.length - blockedUsers.length;
+    if (insErr || !job) return `❌ Failed to queue broadcast: ${insErr?.message ?? "unknown"}`;
 
-    await logAction(db, user, "broadcast", {
-      total: users.length,
-      ok,
-      failed,
-      blocked: blockedUsers.length,
+    await logAction(db, user, "broadcast_started", {
+      job_id: job.id,
       mode: reply ? "forward" : "text",
-      elapsedSec,
-      failedSamples: failures.slice(0, 5).map(f => `${f.user.telegram_user_id}: ${f.reason.slice(0, 160)}`),
+      recipients: recipients ?? null,
     });
 
-    // ---- Summary card ----
-    const summary = [
-      `📢 <b>Broadcast delivery report</b>`,
-      ``,
-      `📨 Mode: <b>${reply ? "Forward" : "Text"}</b>`,
-      `👥 Targeted: <b>${users.length}</b>`,
-      `✅ Delivered: <b>${ok}</b> (${successRate}%)`,
-      `❌ Failed: <b>${failed}</b>`,
-      `  • 🚫 Blocked / unreachable: <b>${blockedUsers.length}</b>`,
-      `  • ⚠️ Other errors: <b>${otherFailed}</b>`,
-      `⏱ Duration: <b>${elapsedSec}s</b>`,
-    ].join("\n");
-    await sendMessage(chatId, summary);
-
-    // ---- Detailed failure list (paginated) ----
-    if (failures.length) {
-      // Blocked first, then other errors — most useful ordering for admin.
-      const sorted = [...failures].sort((a, b) => Number(b.blocked) - Number(a.blocked));
-      const header = `📋 <b>Failed deliveries (${failures.length})</b>\n<i>🚫 = blocked / auto-removed · ⚠️ = other error</i>\n\n`;
-      const lines = sorted.map(f => formatFailureLine(f.user, f.reason, f.blocked));
-
-      const MAX = 3800; // stay well under Telegram's 4096 limit
-      let chunk = header;
-      let part = 1;
-      const totalParts = (() => {
-        let count = 1;
-        let size = header.length;
-        for (const line of lines) {
-          if (size + line.length + 1 > MAX) { count++; size = 0; }
-          size += line.length + 1;
-        }
-        return count;
-      })();
-
-      for (const line of lines) {
-        if (chunk.length + line.length + 1 > MAX) {
-          await sendMessage(chatId, `${chunk}\n\n<i>Part ${part}/${totalParts}</i>`);
-          await wait(50);
-          part++;
-          chunk = "";
-        }
-        chunk += (chunk ? "\n" : "") + line;
-      }
-      if (chunk) {
-        await sendMessage(chatId, totalParts > 1 ? `${chunk}\n\n<i>Part ${part}/${totalParts}</i>` : chunk);
-      }
+    // Fire-and-forget: kick off the background worker. The worker self-chains
+    // through the user list in small chunks so this webhook returns fast and
+    // other commands keep flowing.
+    if (origin) {
+      try {
+        void fetch(`${origin}/api/public/hooks/broadcast`, { method: "POST" }).catch(() => {});
+      } catch { /* ignore */ }
     }
 
-    // Suppress the automatic reply — we already sent the detailed report.
-    return null;
+    return [
+      `📢 <b>Broadcast queued</b> (job #${job.id})`,
+      `👥 Recipients: <b>${recipients ?? "?"}</b>`,
+      `📨 Mode: <b>${reply ? "Forward" : "Text"}</b>`,
+      ``,
+      `Delivery runs in the background — you'll get a full report here when it's done. The bot stays responsive to other commands.`,
+    ].join("\n");
   },
 });
+
 
 
 
