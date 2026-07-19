@@ -56,11 +56,13 @@ export const Route = createFileRoute("/api/public/hooks/broadcast")({
           return Response.json({ ok: true, finished: true });
         }
 
+        const userList = users;
         let ok = 0;
         let failed = 0;
         const newBlocked: number[] = [];
         const newSamples: { id: number; username: string | null; first_name: string | null; reason: string; blocked: boolean }[] = [];
         const existingSampleCount = (job.failure_samples as any[])?.length ?? 0;
+
 
         // Parallel send with bounded concurrency.
         let cursor = 0;
