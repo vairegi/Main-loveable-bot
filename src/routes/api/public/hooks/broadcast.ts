@@ -69,8 +69,9 @@ export const Route = createFileRoute("/api/public/hooks/broadcast")({
         async function worker() {
           while (true) {
             const i = cursor++;
-            if (i >= users.length) return;
-            const u = users[i];
+            if (i >= userList.length) return;
+            const u = userList[i];
+
             const uid = Number(u.telegram_user_id);
             try {
               if (job.mode === "forward") {
