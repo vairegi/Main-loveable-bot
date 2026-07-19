@@ -340,8 +340,14 @@ export async function getPostPosition(db: SupabaseClient, post: { id?: number | 
   return (beforeCount ?? 0) + (sameTimeCount ?? 1);
 }
 
-async function publishPost(db: SupabaseClient, post: any): Promise<void> {
-  const { data: mains } = await db.from("channels").select("telegram_chat_id").eq("role", "main");
+async function publishPost(db: SupabaseClient, post: any, targetChatId?: number | string): Promise<void> {
+  let mains: { telegram_chat_id: number | string }[] | null;
+  if (targetChatId !== undefined) {
+    mains = [{ telegram_chat_id: targetChatId }];
+  } else {
+    const { data } = await db.from("channels").select("telegram_chat_id").eq("role", "main");
+    mains = data;
+  }
   if (!mains?.length) throw new Error("No main channels registered");
 
   const botUsername = await getBotUsername();
@@ -560,7 +566,7 @@ export function parseTelegramPostLink(link: string): { sourceChatId: number | st
 }
 
 // Manually publish a post by its source (database channel) link.
-export async function postByLink(db: SupabaseClient, link: string): Promise<string> {
+export async function postByLink(db: SupabaseClient, link: string, targetChatId?: number | string): Promise<string> {
   const parsed = parseTelegramPostLink(link);
   if (!parsed) return `❌ Not a valid Telegram post link: <code>${link}</code>`;
 
@@ -586,8 +592,9 @@ export async function postByLink(db: SupabaseClient, link: string): Promise<stri
   if (!post) return `❌ No stored post found for <a href="${link}">${parsed.messageId}</a>. Run /scandatabase first if it's new.`;
 
   try {
-    await publishPost(db, post);
-    return `✅ Manually posted <code>${post.code}</code> (msg ${parsed.messageId}). It remains in the automatic queue.`;
+    await publishPost(db, post, targetChatId);
+    const where = targetChatId !== undefined ? ` to <code>${targetChatId}</code>` : "";
+    return `✅ Manually posted <code>${post.code}</code> (msg ${parsed.messageId})${where}.`;
   } catch (e: any) {
     return `❌ Post failed for msg ${parsed.messageId}: ${e?.message ?? "unknown"}`;
   }
