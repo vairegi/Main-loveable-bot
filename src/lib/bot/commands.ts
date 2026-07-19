@@ -509,17 +509,17 @@ register("repost", {
   },
 });
 
-register("mpost", {
-  help: "/mpost &lt;link&gt; [link...] — manually post one or more database posts to main channels by t.me link",
+register("dpost", {
+  help: "/dpost &lt;link&gt; [link...] — manually post one or more database posts to main channels by t.me link",
   adminOnly: true,
   handler: async ({ db, user, args }) => {
     const links = args.filter((a) => /t\.me\//i.test(a));
-    if (!links.length) return "Usage: /mpost &lt;https://t.me/c/&lt;chat&gt;/&lt;msg&gt;&gt; [more links...]";
+    if (!links.length) return "Usage: /dpost &lt;https://t.me/c/&lt;chat&gt;/&lt;msg&gt;&gt; [more links...]";
     const results: string[] = [];
     for (const link of links) {
       results.push(await postByLink(db, link));
     }
-    await logAction(db, user, "mpost", { links, count: links.length });
+    await logAction(db, user, "dpost", { links, count: links.length });
     return results.join("\n");
   },
 });
