@@ -94,16 +94,9 @@ export const Route = createFileRoute("/api/public/hooks/broadcast")({
           if (i < users.length - 1) await wait(SEND_DELAY_MS);
         }
 
-        // Auto-ban blocked users.
-        if (newBlocked.length) {
-          await db.from("bot_users")
-            .update({
-              banned: true,
-              banned_reason: "Telegram delivery failed: blocked bot or chat unavailable",
-              banned_at: new Date().toISOString(),
-            })
-            .in("telegram_user_id", newBlocked);
-        }
+        // Auto-ban disabled: we just skip undeliverable users and keep going.
+        // They remain in bot_users so future broadcasts can retry them.
+
 
         const mergedBlocked = [...(job.blocked_ids as number[] ?? []), ...newBlocked];
         const mergedSamples = [...(job.failure_samples as any[] ?? []), ...newSamples].slice(0, 30);
