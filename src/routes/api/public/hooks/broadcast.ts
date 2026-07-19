@@ -7,14 +7,12 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 
-// Users per invocation. ~40ms pacing per send, so 25 users ≈ 4-6s wall time
-// including Telegram round trips — safely under any Worker limit.
-const CHUNK_SIZE = 25;
-const SEND_DELAY_MS = 40;
+// Sends per invocation. We fire them in parallel (bounded by CONCURRENCY),
+// so a chunk of 200 users finishes in ~7-10s wall time — well under Worker limits.
+// Telegram allows ~30 msg/sec globally per bot; CONCURRENCY=25 stays safely below that.
+const CHUNK_SIZE = 200;
+const CONCURRENCY = 25;
 
-function wait(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 export const Route = createFileRoute("/api/public/hooks/broadcast")({
   server: {
@@ -58,41 +56,51 @@ export const Route = createFileRoute("/api/public/hooks/broadcast")({
           return Response.json({ ok: true, finished: true });
         }
 
+        const userList = users;
         let ok = 0;
         let failed = 0;
         const newBlocked: number[] = [];
         const newSamples: { id: number; username: string | null; first_name: string | null; reason: string; blocked: boolean }[] = [];
+        const existingSampleCount = (job.failure_samples as any[])?.length ?? 0;
 
-        for (let i = 0; i < users.length; i++) {
-          const u = users[i];
-          const uid = Number(u.telegram_user_id);
-          try {
-            if (job.mode === "forward") {
-              await forwardMessage(uid, job.source_chat_id!, Number(job.source_message_id!), {
-                disable_notification: false,
-              });
-            } else {
-              await sendMessage(uid, job.payload_text ?? "");
-            }
-            ok++;
-          } catch (e: any) {
-            failed++;
-            const err = String(e?.message ?? e ?? "unknown");
-            const isBlocked = /\b403\b|bot was blocked|user is deactivated|chat not found|bot can't initiate/i.test(err);
-            if (isBlocked) newBlocked.push(uid);
-            const existingSamples = (job.failure_samples as any[])?.length ?? 0;
-            if (existingSamples + newSamples.length < 30) {
-              newSamples.push({
-                id: uid,
-                username: (u as any).username ?? null,
-                first_name: (u as any).first_name ?? null,
-                reason: err.slice(0, 200),
-                blocked: isBlocked,
-              });
+
+        // Parallel send with bounded concurrency.
+        let cursor = 0;
+        async function worker() {
+          while (true) {
+            const i = cursor++;
+            if (i >= userList.length) return;
+            const u = userList[i];
+
+            const uid = Number(u.telegram_user_id);
+            try {
+              if (job.mode === "forward") {
+                await forwardMessage(uid, job.source_chat_id!, Number(job.source_message_id!), {
+                  disable_notification: false,
+                });
+              } else {
+                await sendMessage(uid, job.payload_text ?? "");
+              }
+              ok++;
+            } catch (e: any) {
+              failed++;
+              const err = String(e?.message ?? e ?? "unknown");
+              const isBlocked = /\b403\b|bot was blocked|user is deactivated|chat not found|bot can't initiate/i.test(err);
+              if (isBlocked) newBlocked.push(uid);
+              if (existingSampleCount + newSamples.length < 30) {
+                newSamples.push({
+                  id: uid,
+                  username: (u as any).username ?? null,
+                  first_name: (u as any).first_name ?? null,
+                  reason: err.slice(0, 200),
+                  blocked: isBlocked,
+                });
+              }
             }
           }
-          if (i < users.length - 1) await wait(SEND_DELAY_MS);
         }
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, userList.length) }, worker));
+
 
         // Auto-ban disabled: we just skip undeliverable users and keep going.
         // They remain in bot_users so future broadcasts can retry them.
