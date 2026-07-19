@@ -15,7 +15,7 @@ async function assertAdmin(ctx: ToolContext) {
   const { data, error } = await sb.rpc("has_role", { _user_id: ctx.getUserId(), _role: "admin" });
   if (error) return { ok: false, msg: `Role check failed: ${error.message}` };
   if (!data) return { ok: false, msg: "Admin role required." };
-  return { ok: true as const, sb: sb! };
+  return { ok: true, sb };
 }
 
 export default defineTool({
