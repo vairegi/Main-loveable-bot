@@ -86,6 +86,7 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "resumeposting", role: "admin", description: "Resume auto-posting." },
       { name: "repost", role: "admin", syntax: "<code|#N>", description: "Repost a stored post by code or queue position." },
       { name: "dpost", role: "admin", syntax: "<link> [link...]", description: "Manually post one or more database posts to main channels by t.me link." },
+      { name: "mpost", role: "admin", syntax: "<link> [link...]", description: "Manually post one or more database posts to the fixed single channel by t.me link." },
       { name: "deletepost", role: "admin", syntax: "<code|#N>", description: "Delete a post (archived, restore with /undelete)." },
       { name: "undelete", role: "admin", syntax: "<code>", description: "Restore a previously deleted post." },
       { name: "deletedposts", role: "admin", description: "List recently deleted posts that can still be restored." },
