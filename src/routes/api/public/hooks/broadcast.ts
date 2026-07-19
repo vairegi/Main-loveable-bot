@@ -60,37 +60,44 @@ export const Route = createFileRoute("/api/public/hooks/broadcast")({
         let failed = 0;
         const newBlocked: number[] = [];
         const newSamples: { id: number; username: string | null; first_name: string | null; reason: string; blocked: boolean }[] = [];
+        const existingSampleCount = (job.failure_samples as any[])?.length ?? 0;
 
-        for (let i = 0; i < users.length; i++) {
-          const u = users[i];
-          const uid = Number(u.telegram_user_id);
-          try {
-            if (job.mode === "forward") {
-              await forwardMessage(uid, job.source_chat_id!, Number(job.source_message_id!), {
-                disable_notification: false,
-              });
-            } else {
-              await sendMessage(uid, job.payload_text ?? "");
-            }
-            ok++;
-          } catch (e: any) {
-            failed++;
-            const err = String(e?.message ?? e ?? "unknown");
-            const isBlocked = /\b403\b|bot was blocked|user is deactivated|chat not found|bot can't initiate/i.test(err);
-            if (isBlocked) newBlocked.push(uid);
-            const existingSamples = (job.failure_samples as any[])?.length ?? 0;
-            if (existingSamples + newSamples.length < 30) {
-              newSamples.push({
-                id: uid,
-                username: (u as any).username ?? null,
-                first_name: (u as any).first_name ?? null,
-                reason: err.slice(0, 200),
-                blocked: isBlocked,
-              });
+        // Parallel send with bounded concurrency.
+        let cursor = 0;
+        async function worker() {
+          while (true) {
+            const i = cursor++;
+            if (i >= users.length) return;
+            const u = users[i];
+            const uid = Number(u.telegram_user_id);
+            try {
+              if (job.mode === "forward") {
+                await forwardMessage(uid, job.source_chat_id!, Number(job.source_message_id!), {
+                  disable_notification: false,
+                });
+              } else {
+                await sendMessage(uid, job.payload_text ?? "");
+              }
+              ok++;
+            } catch (e: any) {
+              failed++;
+              const err = String(e?.message ?? e ?? "unknown");
+              const isBlocked = /\b403\b|bot was blocked|user is deactivated|chat not found|bot can't initiate/i.test(err);
+              if (isBlocked) newBlocked.push(uid);
+              if (existingSampleCount + newSamples.length < 30) {
+                newSamples.push({
+                  id: uid,
+                  username: (u as any).username ?? null,
+                  first_name: (u as any).first_name ?? null,
+                  reason: err.slice(0, 200),
+                  blocked: isBlocked,
+                });
+              }
             }
           }
-          if (i < users.length - 1) await wait(SEND_DELAY_MS);
         }
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, users.length) }, worker));
+
 
         // Auto-ban disabled: we just skip undeliverable users and keep going.
         // They remain in bot_users so future broadcasts can retry them.
