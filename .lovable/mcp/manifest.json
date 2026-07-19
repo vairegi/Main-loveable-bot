@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "sdk_version": "0.23.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://hsbemeyisoucwndlgpqu.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "telegram-bot-admin-mcp",
+      "version": "0.1.0",
+      "title": "Telegram Bot Admin"
+    },
+    "tools": [
+      {
+        "name": "get_bot_stats",
+        "title": "Get bot stats",
+        "description": "Return high-level counts for the Telegram bot: total posts, tracked users, banned users, and admins.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_recent_posts",
+        "title": "List recent posts",
+        "description": "List the most recent posts stored in the bot's database channel, newest first.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "description": "How many posts to return (1-50). Defaults to 10.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "search_posts",
+        "title": "Search posts by caption",
+        "description": "Find posts whose caption contains the given text (case-insensitive).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Text to search inside the post caption."
+            },
+            "limit": {
+              "description": "Max rows to return (1-50). Defaults to 10.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "query"
+          ]
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
