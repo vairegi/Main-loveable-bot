@@ -1887,6 +1887,114 @@ register("favs", {
   },
 });
 
+register("favsall", {
+  help: "/favsall — show recent favorites across all users (admin)",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { data: favs } = await db
+      .from("favorites")
+      .select("user_id, created_at, posts(id, code, caption)")
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (!favs?.length) return "🤍 No favorites saved yet.";
+
+    const userIds = [...new Set((favs as any[]).map((f) => f.user_id))];
+    const { data: users } = await db
+      .from("bot_users")
+      .select("telegram_user_id, username, first_name")
+      .in("telegram_user_id", userIds);
+    const uMap = new Map<number, any>();
+    for (const u of users ?? []) uMap.set(Number((u as any).telegram_user_id), u);
+
+    const { getBotUsername } = await import("./telegram");
+    const botUsername = await getBotUsername();
+    const lines = ["<b>❤️ All favorites (latest 50)</b>", ""];
+    for (const f of favs as any[]) {
+      const p = f.posts;
+      if (!p) continue;
+      const u = uMap.get(Number(f.user_id));
+      const who = u?.username ? `@${u.username}` : (u?.first_name ?? String(f.user_id));
+      const title = (p.caption ?? "").split("\n")[0].slice(0, 50) || `Post #${p.id}`;
+      lines.push(`• ${escapeHtml(who)} → <a href="https://t.me/${botUsername}?start=get_${p.code}">${escapeHtml(title)}</a>`);
+    }
+    return lines.join("\n");
+  },
+});
+
+register("whosaved", {
+  help: "/whosaved &lt;code&gt; — list users who saved a specific post (admin)",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    const code = args[0];
+    if (!code) return "Usage: /whosaved &lt;post_code&gt;";
+    const { data: post } = await db
+      .from("posts")
+      .select("id, code, caption")
+      .eq("code", code)
+      .maybeSingle();
+    if (!post) return `❌ No post found with code <code>${escapeHtml(code)}</code>`;
+
+    const { data: favs } = await db
+      .from("favorites")
+      .select("user_id, created_at")
+      .eq("post_id", (post as any).id)
+      .order("created_at", { ascending: false });
+
+    if (!favs?.length) return `🤍 No users have saved <code>${escapeHtml(code)}</code> yet.`;
+
+    const userIds = (favs as any[]).map((f) => f.user_id);
+    const { data: users } = await db
+      .from("bot_users")
+      .select("telegram_user_id, username, first_name")
+      .in("telegram_user_id", userIds);
+    const uMap = new Map<number, any>();
+    for (const u of users ?? []) uMap.set(Number((u as any).telegram_user_id), u);
+
+    const title = ((post as any).caption ?? "").split("\n")[0].slice(0, 60) || `Post #${(post as any).id}`;
+    const lines = [`<b>❤️ ${escapeHtml(title)}</b>`, `<code>${escapeHtml(code)}</code> — ${favs.length} saver${favs.length === 1 ? "" : "s"}`, ""];
+    for (const f of favs as any[]) {
+      const u = uMap.get(Number(f.user_id));
+      const who = u?.username ? `@${u.username}` : (u?.first_name ?? "");
+      lines.push(`• <code>${f.user_id}</code>${who ? ` ${escapeHtml(who)}` : ""}`);
+    }
+    return lines.join("\n");
+  },
+});
+
+register("topfavs", {
+  help: "/topfavs — most-saved posts with saver counts (admin)",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { data: favs } = await db
+      .from("favorites")
+      .select("post_id");
+    if (!favs?.length) return "🤍 No favorites saved yet.";
+
+    const counts = new Map<number, number>();
+    for (const f of favs as any[]) counts.set(f.post_id, (counts.get(f.post_id) ?? 0) + 1);
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+
+    const { data: posts } = await db
+      .from("posts")
+      .select("id, code, caption")
+      .in("id", top.map(([id]) => id));
+    const pMap = new Map<number, any>();
+    for (const p of posts ?? []) pMap.set(Number((p as any).id), p);
+
+    const { getBotUsername } = await import("./telegram");
+    const botUsername = await getBotUsername();
+    const lines = ["<b>🏆 Top favorites</b>", ""];
+    for (const [pid, count] of top) {
+      const p = pMap.get(pid);
+      if (!p) continue;
+      const title = (p.caption ?? "").split("\n")[0].slice(0, 50) || `Post #${p.id}`;
+      lines.push(`${count}× <a href="https://t.me/${botUsername}?start=get_${p.code}">${escapeHtml(title)}</a> <code>${escapeHtml(p.code)}</code>`);
+    }
+    return lines.join("\n");
+  },
+});
+
 register("linkweb", {
   help: "/linkweb — get a one-time link to sign into the admin web page",
   adminOnly: true,
