@@ -524,6 +524,23 @@ register("dpost", {
   },
 });
 
+const MPOST_TARGET_CHAT_ID = -1002124674626;
+register("mpost", {
+  help: "/mpost &lt;link&gt; [link...] — manually post one or more database posts to the fixed main channel",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const links = args.filter((a) => /t\.me\//i.test(a));
+    if (!links.length) return "Usage: /mpost &lt;https://t.me/c/&lt;chat&gt;/&lt;msg&gt;&gt; [more links...]";
+    const results: string[] = [];
+    for (const link of links) {
+      results.push(await postByLink(db, link, MPOST_TARGET_CHAT_ID));
+    }
+    await logAction(db, user, "mpost", { links, count: links.length, target: MPOST_TARGET_CHAT_ID });
+    return results.join("\n");
+  },
+});
+
+
 
 register("deletepost", {
   help: "/deletepost &lt;code|#N&gt; — delete a post by code or queue position (archived, restore with /undelete)",
