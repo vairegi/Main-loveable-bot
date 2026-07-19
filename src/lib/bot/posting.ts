@@ -566,7 +566,7 @@ export function parseTelegramPostLink(link: string): { sourceChatId: number | st
 }
 
 // Manually publish a post by its source (database channel) link.
-export async function postByLink(db: SupabaseClient, link: string): Promise<string> {
+export async function postByLink(db: SupabaseClient, link: string, targetChatId?: number | string): Promise<string> {
   const parsed = parseTelegramPostLink(link);
   if (!parsed) return `❌ Not a valid Telegram post link: <code>${link}</code>`;
 
@@ -592,8 +592,9 @@ export async function postByLink(db: SupabaseClient, link: string): Promise<stri
   if (!post) return `❌ No stored post found for <a href="${link}">${parsed.messageId}</a>. Run /scandatabase first if it's new.`;
 
   try {
-    await publishPost(db, post);
-    return `✅ Manually posted <code>${post.code}</code> (msg ${parsed.messageId}). It remains in the automatic queue.`;
+    await publishPost(db, post, targetChatId);
+    const where = targetChatId !== undefined ? ` to <code>${targetChatId}</code>` : "";
+    return `✅ Manually posted <code>${post.code}</code> (msg ${parsed.messageId})${where}.`;
   } catch (e: any) {
     return `❌ Post failed for msg ${parsed.messageId}: ${e?.message ?? "unknown"}`;
   }
