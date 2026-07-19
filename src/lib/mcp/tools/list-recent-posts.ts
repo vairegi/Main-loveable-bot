@@ -1,22 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
-import { defineTool, type ToolContext } from "@lovable.dev/mcp-js";
+import { defineTool } from "@lovable.dev/mcp-js";
 import { z } from "zod";
-
-function supabaseForUser(ctx: ToolContext) {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
-
-async function assertAdmin(ctx: ToolContext) {
-  if (!ctx.isAuthenticated()) return { ok: false, msg: "Not authenticated." };
-  const sb = supabaseForUser(ctx);
-  const { data, error } = await sb.rpc("has_role", { _user_id: ctx.getUserId(), _role: "admin" });
-  if (error) return { ok: false, msg: `Role check failed: ${error.message}` };
-  if (!data) return { ok: false, msg: "Admin role required." };
-  return { ok: true, sb };
-}
+import { assertAdmin, errorResult } from "./_shared";
 
 export default defineTool({
   name: "list_recent_posts",
@@ -28,7 +12,7 @@ export default defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async ({ limit }, ctx) => {
     const gate = await assertAdmin(ctx);
-    if (!gate.ok) return { content: [{ type: "text", text: gate.msg }], isError: true };
+    if (!gate.ok) return errorResult(gate.msg);
 
     const n = limit ?? 10;
     const { data, error } = await gate.sb
@@ -36,16 +20,16 @@ export default defineTool({
       .select("id, caption, created_at, posted_at, source_chat_id, source_message_id")
       .order("id", { ascending: false })
       .limit(n);
-    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    if (error) return errorResult(error.message);
 
-    const rows = (data ?? []).map((p) => ({
+    const rows = (data ?? []).map((p: any) => ({
       id: p.id,
       caption: (p.caption ?? "").slice(0, 200),
       created_at: p.created_at,
       posted_at: p.posted_at,
     }));
     return {
-      content: [{ type: "text", text: JSON.stringify(rows, null, 2) }],
+      content: [{ type: "text" as const, text: JSON.stringify(rows, null, 2) }],
       structuredContent: { posts: rows },
     };
   },
