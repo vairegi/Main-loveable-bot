@@ -1909,16 +1909,48 @@ register("favsall", {
 
     const { getBotUsername } = await import("./telegram");
     const botUsername = await getBotUsername();
-    const lines = ["<b>❤️ All favorites (latest 50)</b>", ""];
+
+    // Group by user, preserving most-recent-first order
+    type Group = { uid: number; titles: string[]; codes: string[]; latest: string };
+    const groups = new Map<number, Group>();
     for (const f of favs as any[]) {
       const p = f.posts;
       if (!p) continue;
-      const u = uMap.get(Number(f.user_id));
-      const who = u?.username ? `@${u.username}` : (u?.first_name ?? String(f.user_id));
-      const title = (p.caption ?? "").split("\n")[0].slice(0, 50) || `Post #${p.id}`;
-      lines.push(`• ${escapeHtml(who)} → <a href="https://t.me/${botUsername}?start=get_${p.code}">${escapeHtml(title)}</a>`);
+      const uid = Number(f.user_id);
+      let g = groups.get(uid);
+      if (!g) {
+        g = { uid, titles: [], codes: [], latest: f.created_at };
+        groups.set(uid, g);
+      }
+      const title = (p.caption ?? "").split("\n")[0].slice(0, 40) || `Post #${p.id}`;
+      g.titles.push(title);
+      g.codes.push(p.code);
     }
-    return lines.join("\n");
+
+    const fmtTime = (iso: string) => {
+      try {
+        return new Date(iso).toLocaleTimeString("en-US", {
+          hour: "numeric", minute: "2-digit", hour12: true,
+        });
+      } catch { return ""; }
+    };
+
+    const lines = [`<b>❤️ Recent favorites (${favs.length})</b>`, ""];
+    const SHOW = 4;
+    for (const g of groups.values()) {
+      const u = uMap.get(g.uid);
+      const who = u?.username ? `@${u.username}` : (u?.first_name ?? String(g.uid));
+      const shown = g.titles.slice(0, SHOW).map((t, i) =>
+        `<a href="https://t.me/${botUsername}?start=get_${g.codes[i]}">${escapeHtml(t)}</a>`
+      );
+      const extra = g.titles.length - SHOW;
+      const body = shown.join(", ") + (extra > 0 ? `, +${extra}` : "");
+      lines.push(`┌ 👤 ${escapeHtml(who)} · ${g.titles.length} save${g.titles.length === 1 ? "" : "s"}`);
+      lines.push(`├ ${body}`);
+      lines.push(`└ latest: ${fmtTime(g.latest)}`);
+      lines.push("");
+    }
+    return lines.join("\n").trimEnd();
   },
 });
 
