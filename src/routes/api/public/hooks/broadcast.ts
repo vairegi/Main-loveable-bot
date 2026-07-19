@@ -7,14 +7,12 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 
-// Users per invocation. ~40ms pacing per send, so 25 users ≈ 4-6s wall time
-// including Telegram round trips — safely under any Worker limit.
-const CHUNK_SIZE = 25;
-const SEND_DELAY_MS = 40;
+// Sends per invocation. We fire them in parallel (bounded by CONCURRENCY),
+// so a chunk of 200 users finishes in ~7-10s wall time — well under Worker limits.
+// Telegram allows ~30 msg/sec globally per bot; CONCURRENCY=25 stays safely below that.
+const CHUNK_SIZE = 200;
+const CONCURRENCY = 25;
 
-function wait(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 export const Route = createFileRoute("/api/public/hooks/broadcast")({
   server: {
