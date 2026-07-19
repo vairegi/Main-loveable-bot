@@ -99,7 +99,7 @@ export const Route = createFileRoute("/api/public/hooks/broadcast")({
             }
           }
         }
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, users.length) }, worker));
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, userList.length) }, worker));
 
 
         // Auto-ban disabled: we just skip undeliverable users and keep going.
