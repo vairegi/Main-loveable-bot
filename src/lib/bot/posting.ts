@@ -340,8 +340,14 @@ export async function getPostPosition(db: SupabaseClient, post: { id?: number | 
   return (beforeCount ?? 0) + (sameTimeCount ?? 1);
 }
 
-async function publishPost(db: SupabaseClient, post: any): Promise<void> {
-  const { data: mains } = await db.from("channels").select("telegram_chat_id").eq("role", "main");
+async function publishPost(db: SupabaseClient, post: any, targetChatId?: number | string): Promise<void> {
+  let mains: { telegram_chat_id: number | string }[] | null;
+  if (targetChatId !== undefined) {
+    mains = [{ telegram_chat_id: targetChatId }];
+  } else {
+    const { data } = await db.from("channels").select("telegram_chat_id").eq("role", "main");
+    mains = data;
+  }
   if (!mains?.length) throw new Error("No main channels registered");
 
   const botUsername = await getBotUsername();
