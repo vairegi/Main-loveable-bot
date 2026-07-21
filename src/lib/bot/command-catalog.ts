@@ -175,7 +175,7 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "unban", role: "admin", syntax: "<user_id>", description: "Remove ban." },
       { name: "banlist", role: "admin", description: "Show banned users." },
       { name: "unbanall", role: "admin", description: "Unban every banned user." },
-      { name: "search", role: "admin", syntax: "<query>", description: "Search hentaifox, tick multiple, then send links." },
+      
       { name: "favsall", role: "admin", description: "Show recent favorites across all users." },
       { name: "whosaved", role: "admin", syntax: "<code>", description: "List users who saved a specific post." },
       { name: "topfavs", role: "admin", description: "Most-saved posts with saver counts." },
