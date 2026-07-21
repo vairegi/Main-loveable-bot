@@ -35,18 +35,7 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           }
         }
 
-        // Inline search: "@bot query" from any chat.
-        if (update.inline_query) {
-          try {
-            const { handleInlineQuery } = await import("@/lib/bot/inline");
-            await handleInlineQuery(db, update.inline_query);
-          } catch (e) {
-            console.error("handleInlineQuery failed:", e);
-          }
-          return Response.json({ ok: true, inline: true });
-        }
-
-        // Callback buttons (multi-select checkboxes, destructive-command confirms, etc.)
+        // Callback buttons (destructive-command confirms, favorite/rate reactions).
         if (update.callback_query) {
           const data = String(update.callback_query.data ?? "");
           try {
@@ -58,8 +47,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
               const { handleReactionCallback } = await import("@/lib/bot/reactions");
               await handleReactionCallback(db, update.callback_query);
             } else {
-              const { handleSearchCallback } = await import("@/lib/bot/search");
-              await handleSearchCallback(db, update.callback_query);
+              const { tg } = await import("@/lib/bot/telegram");
+              await tg("answerCallbackQuery", { callback_query_id: update.callback_query.id });
             }
           } catch (e) {
             console.error("callback handler failed:", e);
