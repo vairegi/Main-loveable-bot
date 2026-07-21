@@ -1857,7 +1857,7 @@ register("banlist", {
       "<b>🚫 Banned users</b>",
       ...data.map(
         (u) =>
-          `• <code>${u.telegram_user_id}</code> ${u.username ? "@" + u.username : (u.first_name ?? "")}${u.banned_reason ? ` — ${u.banned_reason}` : ""}`,
+          `• <code>${u.telegram_user_id}</code> ${u.username ? "@" + escapeHtml(u.username) : escapeHtml(u.first_name ?? "")}${u.banned_reason ? ` — ${escapeHtml(u.banned_reason)}` : ""}`,
       ),
     ].join("\n");
   },
