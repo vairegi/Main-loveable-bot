@@ -1863,6 +1863,27 @@ register("banlist", {
   },
 });
 
+register("unbanall", {
+  help: "/unbanall — unban every banned user",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    const { data: banned, error: selErr } = await db
+      .from("bot_users")
+      .select("telegram_user_id")
+      .eq("banned", true);
+    if (selErr) return `⚠️ Error: ${selErr.message}`;
+    const count = banned?.length ?? 0;
+    if (!count) return "No banned users to unban.";
+    const { error } = await db
+      .from("bot_users")
+      .update({ banned: false, banned_reason: null, banned_at: null })
+      .eq("banned", true);
+    if (error) return `⚠️ Error: ${error.message}`;
+    await logAction(db, user, "unban_all", { count });
+    return `✅ Unbanned <b>${count}</b> user${count === 1 ? "" : "s"}.`;
+  },
+});
+
 register("search", {
   help: "/search &lt;query&gt; — search hentaifox, tick multiple, then send links (admins)",
   adminOnly: true,
