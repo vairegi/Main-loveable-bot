@@ -1916,74 +1916,140 @@ register("favs", {
   },
 });
 
+const FAVSALL_PAGE_SIZE = 10;
+
+export async function renderFavsAllPage(
+  db: SupabaseClient,
+  page: number,
+): Promise<{ text: string; hasPrev: boolean; hasNext: boolean; totalPages: number; totalUsers: number } | null> {
+  const { data: favs } = await db
+    .from("favorites")
+    .select("user_id, post_id, created_at, posts(id, code, caption)")
+    .order("created_at", { ascending: false })
+    .limit(20000);
+
+  if (!favs?.length) return null;
+
+  const userIds = [...new Set((favs as any[]).map((f) => f.user_id))];
+  const { data: users } = await db
+    .from("bot_users")
+    .select("telegram_user_id, username, first_name")
+    .in("telegram_user_id", userIds);
+  const uMap = new Map<number, any>();
+  for (const u of users ?? []) uMap.set(Number((u as any).telegram_user_id), u);
+
+  const { getBotUsername } = await import("./telegram");
+  const botUsername = await getBotUsername();
+
+  type Group = { uid: number; titles: string[]; codes: string[]; latest: string };
+  const groups = new Map<number, Group>();
+  for (const f of favs as any[]) {
+    const p = f.posts;
+    if (!p) continue;
+    const uid = Number(f.user_id);
+    let g = groups.get(uid);
+    if (!g) {
+      g = { uid, titles: [], codes: [], latest: f.created_at };
+      groups.set(uid, g);
+    }
+    const title = (p.caption ?? "").split("\n")[0].slice(0, 40) || `Post #${p.id}`;
+    g.titles.push(title);
+    g.codes.push(p.code);
+    if (f.created_at > g.latest) g.latest = f.created_at;
+  }
+
+  const ranked = [...groups.values()].sort((a, b) => b.titles.length - a.titles.length);
+  const totalUsers = ranked.length;
+  const totalPages = Math.max(1, Math.ceil(totalUsers / FAVSALL_PAGE_SIZE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const start = safePage * FAVSALL_PAGE_SIZE;
+  const slice = ranked.slice(start, start + FAVSALL_PAGE_SIZE);
+
+  const lines = [
+    `<b>🏆 Top savers (${totalUsers} users, ${favs.length} saves)</b>`,
+    `<i>Page ${safePage + 1} / ${totalPages}</i>`,
+    "",
+  ];
+  const SHOW = 4;
+  let rank = start;
+  for (const g of slice) {
+    rank++;
+    const u = uMap.get(g.uid);
+    const who = u?.username ? `@${u.username}` : (u?.first_name ?? String(g.uid));
+    const shown = g.titles.slice(0, SHOW).map((t, i) =>
+      `<a href="https://t.me/${botUsername}?start=get_${g.codes[i]}">${escapeHtml(t)}</a>`
+    );
+    const extra = g.titles.length - SHOW;
+    const body = shown.join(", ") + (extra > 0 ? `, +${extra}` : "");
+    lines.push(`┌ #${rank} 👤 ${escapeHtml(who)} · ${g.titles.length} save${g.titles.length === 1 ? "" : "s"}`);
+    lines.push(`├ ${body}`);
+    lines.push("");
+  }
+
+  return {
+    text: lines.join("\n").trimEnd(),
+    hasPrev: safePage > 0,
+    hasNext: safePage < totalPages - 1,
+    totalPages,
+    totalUsers,
+  };
+}
+
+function favsAllKeyboard(page: number, hasPrev: boolean, hasNext: boolean) {
+  const row: any[] = [];
+  if (hasPrev) row.push({ text: "◀ Prev", callback_data: `favsall:${page - 1}` });
+  if (hasNext) row.push({ text: "Next ▶", callback_data: `favsall:${page + 1}` });
+  return row.length ? { inline_keyboard: [row] } : undefined;
+}
+
+export async function handleFavsAllCallback(db: SupabaseClient, cbq: any) {
+  const fromId = Number(cbq?.from?.id ?? 0);
+  const { data: adminRow } = await db
+    .from("admins")
+    .select("telegram_user_id")
+    .eq("telegram_user_id", fromId)
+    .maybeSingle();
+  if (!adminRow) {
+    await tg("answerCallbackQuery", { callback_query_id: cbq.id, text: "Admin only" });
+    return;
+  }
+  const page = Number(String(cbq.data ?? "").split(":")[1] ?? 0) || 0;
+  const chatId = cbq.message?.chat?.id;
+  const msgId = cbq.message?.message_id;
+  if (!chatId || !msgId) {
+    await tg("answerCallbackQuery", { callback_query_id: cbq.id });
+    return;
+  }
+  const rendered = await renderFavsAllPage(db, page);
+  if (!rendered) {
+    await tg("answerCallbackQuery", { callback_query_id: cbq.id, text: "No favorites" });
+    return;
+  }
+  const kb = favsAllKeyboard(page, rendered.hasPrev, rendered.hasNext);
+  try {
+    await editMessageText(chatId, msgId, rendered.text, {
+      reply_markup: kb,
+      disable_web_page_preview: true,
+    });
+  } catch { /* likely "message is not modified" */ }
+  await tg("answerCallbackQuery", { callback_query_id: cbq.id });
+}
+
 register("favsall", {
   help: "/favsall — top savers ranked by total saves (admin)",
   adminOnly: true,
-  handler: async ({ db }) => {
-    // Fetch all favorites (bot scale is small; paginate if this grows).
-    const { data: favs } = await db
-      .from("favorites")
-      .select("user_id, post_id, created_at, posts(id, code, caption)")
-      .order("created_at", { ascending: false })
-      .limit(5000);
-
-    if (!favs?.length) return "🤍 No favorites saved yet.";
-
-    const userIds = [...new Set((favs as any[]).map((f) => f.user_id))];
-    const { data: users } = await db
-      .from("bot_users")
-      .select("telegram_user_id, username, first_name")
-      .in("telegram_user_id", userIds);
-    const uMap = new Map<number, any>();
-    for (const u of users ?? []) uMap.set(Number((u as any).telegram_user_id), u);
-
-    const { getBotUsername } = await import("./telegram");
-    const botUsername = await getBotUsername();
-
-    type Group = { uid: number; titles: string[]; codes: string[]; latest: string };
-    const groups = new Map<number, Group>();
-    for (const f of favs as any[]) {
-      const p = f.posts;
-      if (!p) continue;
-      const uid = Number(f.user_id);
-      let g = groups.get(uid);
-      if (!g) {
-        g = { uid, titles: [], codes: [], latest: f.created_at };
-        groups.set(uid, g);
-      }
-      const title = (p.caption ?? "").split("\n")[0].slice(0, 40) || `Post #${p.id}`;
-      g.titles.push(title);
-      g.codes.push(p.code);
-      if (f.created_at > g.latest) g.latest = f.created_at;
-    }
-
-    // Rank by total saves desc
-    const ranked = [...groups.values()].sort((a, b) => b.titles.length - a.titles.length);
-
-    const lines = [`<b>🏆 Top savers (${ranked.length} users, ${favs.length} saves)</b>`, ""];
-    const SHOW = 4;
-    let rank = 0;
-    for (const g of ranked) {
-      rank++;
-      const u = uMap.get(g.uid);
-      const who = u?.username ? `@${u.username}` : (u?.first_name ?? String(g.uid));
-      const shown = g.titles.slice(0, SHOW).map((t, i) =>
-        `<a href="https://t.me/${botUsername}?start=get_${g.codes[i]}">${escapeHtml(t)}</a>`
-      );
-      const extra = g.titles.length - SHOW;
-      const body = shown.join(", ") + (extra > 0 ? `, +${extra}` : "");
-      lines.push(`┌ #${rank} 👤 ${escapeHtml(who)} · ${g.titles.length} save${g.titles.length === 1 ? "" : "s"}`);
-      lines.push(`├ ${body}`);
-      lines.push("");
-      // Telegram message limit is 4096 chars — stop early if we're getting big
-      if (lines.join("\n").length > 3500) {
-        lines.push(`… and ${ranked.length - rank} more`);
-        break;
-      }
-    }
-    return lines.join("\n").trimEnd();
+  handler: async ({ db, chatId }) => {
+    const rendered = await renderFavsAllPage(db, 0);
+    if (!rendered) return "🤍 No favorites saved yet.";
+    const kb = favsAllKeyboard(0, false, rendered.hasNext);
+    await sendMessage(chatId, rendered.text, {
+      reply_markup: kb,
+      disable_web_page_preview: true,
+    });
+    return null;
   },
 });
+
 
 register("favsrecent", {
   help: "/favsrecent — show recent favorites across all users (admin)",
