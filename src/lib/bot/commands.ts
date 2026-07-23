@@ -1917,7 +1917,76 @@ register("favs", {
 });
 
 register("favsall", {
-  help: "/favsall — show recent favorites across all users (admin)",
+  help: "/favsall — top savers ranked by total saves (admin)",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    // Fetch all favorites (bot scale is small; paginate if this grows).
+    const { data: favs } = await db
+      .from("favorites")
+      .select("user_id, post_id, created_at, posts(id, code, caption)")
+      .order("created_at", { ascending: false })
+      .limit(5000);
+
+    if (!favs?.length) return "🤍 No favorites saved yet.";
+
+    const userIds = [...new Set((favs as any[]).map((f) => f.user_id))];
+    const { data: users } = await db
+      .from("bot_users")
+      .select("telegram_user_id, username, first_name")
+      .in("telegram_user_id", userIds);
+    const uMap = new Map<number, any>();
+    for (const u of users ?? []) uMap.set(Number((u as any).telegram_user_id), u);
+
+    const { getBotUsername } = await import("./telegram");
+    const botUsername = await getBotUsername();
+
+    type Group = { uid: number; titles: string[]; codes: string[]; latest: string };
+    const groups = new Map<number, Group>();
+    for (const f of favs as any[]) {
+      const p = f.posts;
+      if (!p) continue;
+      const uid = Number(f.user_id);
+      let g = groups.get(uid);
+      if (!g) {
+        g = { uid, titles: [], codes: [], latest: f.created_at };
+        groups.set(uid, g);
+      }
+      const title = (p.caption ?? "").split("\n")[0].slice(0, 40) || `Post #${p.id}`;
+      g.titles.push(title);
+      g.codes.push(p.code);
+      if (f.created_at > g.latest) g.latest = f.created_at;
+    }
+
+    // Rank by total saves desc
+    const ranked = [...groups.values()].sort((a, b) => b.titles.length - a.titles.length);
+
+    const lines = [`<b>🏆 Top savers (${ranked.length} users, ${favs.length} saves)</b>`, ""];
+    const SHOW = 4;
+    let rank = 0;
+    for (const g of ranked) {
+      rank++;
+      const u = uMap.get(g.uid);
+      const who = u?.username ? `@${u.username}` : (u?.first_name ?? String(g.uid));
+      const shown = g.titles.slice(0, SHOW).map((t, i) =>
+        `<a href="https://t.me/${botUsername}?start=get_${g.codes[i]}">${escapeHtml(t)}</a>`
+      );
+      const extra = g.titles.length - SHOW;
+      const body = shown.join(", ") + (extra > 0 ? `, +${extra}` : "");
+      lines.push(`┌ #${rank} 👤 ${escapeHtml(who)} · ${g.titles.length} save${g.titles.length === 1 ? "" : "s"}`);
+      lines.push(`├ ${body}`);
+      lines.push("");
+      // Telegram message limit is 4096 chars — stop early if we're getting big
+      if (lines.join("\n").length > 3500) {
+        lines.push(`… and ${ranked.length - rank} more`);
+        break;
+      }
+    }
+    return lines.join("\n").trimEnd();
+  },
+});
+
+register("favsrecent", {
+  help: "/favsrecent — show recent favorites across all users (admin)",
   adminOnly: true,
   handler: async ({ db }) => {
     const { data: favs } = await db
@@ -1939,7 +2008,6 @@ register("favsall", {
     const { getBotUsername } = await import("./telegram");
     const botUsername = await getBotUsername();
 
-    // Group by user, preserving most-recent-first order
     type Group = { uid: number; titles: string[]; codes: string[]; latest: string };
     const groups = new Map<number, Group>();
     for (const f of favs as any[]) {
@@ -1982,6 +2050,7 @@ register("favsall", {
     return lines.join("\n").trimEnd();
   },
 });
+
 
 register("whosaved", {
   help: "/whosaved &lt;code&gt; — list users who saved a specific post (admin)",
