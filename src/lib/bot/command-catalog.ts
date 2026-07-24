@@ -38,6 +38,7 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "help", role: "user", description: "Show the command index." },
       { name: "whoami", role: "user", description: "Show your Telegram ID and role." },
       { name: "favs", role: "user", description: "List posts you've saved with ❤️." },
+      { name: "rfavs", role: "user", syntax: "<code> [code...]", description: "Remove posts from your favorites. Accepts codes or t.me links from /favs." },
     ],
   },
   {

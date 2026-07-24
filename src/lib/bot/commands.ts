@@ -1916,6 +1916,59 @@ register("favs", {
   },
 });
 
+register("rfavs", {
+  help: "/rfavs &lt;code&gt; [code...] — remove posts from your favorites (accepts codes or t.me links)",
+  handler: async ({ db, user, args }) => {
+    if (!args.length) return "Usage: /rfavs &lt;code&gt; [code...]\nTip: tap a link from /favs and copy the code, or paste the link itself.";
+
+    // Extract a code from a raw arg: supports bare codes and t.me links containing start=get_CODE.
+    const extractCode = (raw: string): string | null => {
+      const m = raw.match(/start=get_([A-Za-z0-9_-]+)/);
+      if (m) return m[1];
+      const trimmed = raw.trim().replace(/^[<(]+|[>)]+$/g, "");
+      if (/^[A-Za-z0-9_-]+$/.test(trimmed)) return trimmed;
+      return null;
+    };
+
+    const codes: string[] = [];
+    for (const a of args) {
+      const c = extractCode(a);
+      if (c && !codes.includes(c)) codes.push(c);
+    }
+    if (!codes.length) return "❌ Couldn't parse any post codes from your input.";
+
+    const { data: posts } = await db
+      .from("posts")
+      .select("id, code, caption")
+      .in("code", codes);
+    const pMap = new Map<string, any>();
+    for (const p of (posts as any[]) ?? []) pMap.set(p.code, p);
+
+    const removed: string[] = [];
+    const notSaved: string[] = [];
+    const unknown: string[] = [];
+
+    for (const code of codes) {
+      const p = pMap.get(code);
+      if (!p) { unknown.push(code); continue; }
+      const { data: del, error } = await db
+        .from("favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("post_id", p.id)
+        .select("post_id");
+      if (error) { unknown.push(code); continue; }
+      if (del && del.length) removed.push(code); else notSaved.push(code);
+    }
+
+    const lines: string[] = [];
+    if (removed.length) lines.push(`💔 Removed ${removed.length} from favorites: ${removed.map((c) => `<code>${escapeHtml(c)}</code>`).join(", ")}`);
+    if (notSaved.length) lines.push(`ℹ️ Not in your favorites: ${notSaved.map((c) => `<code>${escapeHtml(c)}</code>`).join(", ")}`);
+    if (unknown.length) lines.push(`❌ Unknown code: ${unknown.map((c) => `<code>${escapeHtml(c)}</code>`).join(", ")}`);
+    return lines.join("\n");
+  },
+});
+
 const FAVSALL_PAGE_SIZE = 10;
 
 export async function renderFavsAllPage(
