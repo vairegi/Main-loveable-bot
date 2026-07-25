@@ -126,6 +126,7 @@ function AdminPage() {
             {tab === "users" && <UsersTable rows={data.users} />}
             {tab === "posts" && <PostsTable rows={data.posts} />}
             {tab === "failures" && <FailuresTable rows={data.failures} />}
+            {tab === "audit" && <AuditTable rows={(data as any).audit ?? []} />}
           </>
         )}
       </main>
