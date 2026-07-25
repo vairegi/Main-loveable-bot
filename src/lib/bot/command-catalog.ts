@@ -201,10 +201,13 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
         description: "Send text to every user, or reply to a message with /broadcast to forward it.",
         details: "Formatting supported. Replying to a forwarded channel post preserves the original channel tag.",
       },
+      { name: "broadcastlater", role: "admin", syntax: "<duration> <text|reply>", description: "Queue a broadcast for later (e.g. 5h). Reply to a message to schedule a forward." },
+      { name: "exportusers", role: "admin", description: "Download every bot user as a CSV attachment." },
       { name: "ban", role: "admin", syntax: "<user_id> [reason]", description: "Block a user from fetching files." },
       { name: "unban", role: "admin", syntax: "<user_id>", description: "Remove ban." },
       { name: "banlist", role: "admin", description: "Show banned users." },
       { name: "unbanall", role: "admin", description: "Unban every banned user." },
+      
       
       { name: "favsall", role: "admin", description: "Top savers ranked by total saves." },
       { name: "favsrecent", role: "admin", description: "Show recent favorites across all users." },
