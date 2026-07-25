@@ -1903,6 +1903,7 @@ register("unban", {
     const r = await unbanUser(db, target);
     if (r.error) return `❌ ${r.error}`;
     await logAction(db, user, "unban_user", { target });
+    { const { writeAudit } = await import("./audit"); await writeAudit(db, user, "unban_user", String(target)); }
     return `✅ Unbanned <code>${target}</code>.`;
   },
 });
