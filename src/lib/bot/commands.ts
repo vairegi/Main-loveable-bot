@@ -1611,10 +1611,16 @@ register("stats", {
       }
     }
 
+    const { getBotUsername: getBotUsernameForStats } = await import("./telegram");
+    const statsBotUsername = await getBotUsernameForStats();
+
     const topLines = (topFiles ?? [])
       .filter((p) => (p.fetch_count ?? 0) > 0)
       .slice(0, 10)
-      .map((p, i) => `${i + 1}. <code>${p.code}</code> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`);
+      .map(
+        (p, i) =>
+          `${i + 1}. <a href="https://t.me/${statsBotUsername}?start=get_${p.code}"><code>${p.code}</code></a> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`,
+      );
 
     const convRate =
       shortenerIssued7d && shortenerIssued7d > 0
@@ -1633,6 +1639,7 @@ register("stats", {
       "",
       "<b>📈 Engagement</b>",
       `Fetches: <b>${fetchesToday ?? 0}</b> today · ${fetches7d ?? 0} in last 7d`,
+      `Users who fetched: <b>${uniqueFetchersToday}</b> today · ${uniqueFetchers7d} in last 7d`,
       `Shortener conversion (7d): <b>${convRate}</b>`,
       "",
       `<b>⏱️ Queues</b>`,
