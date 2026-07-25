@@ -455,8 +455,12 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
     return "";
   }
 
-  // Link-shortener verification gate (no-op when disabled).
-  {
+  // Referral bonus: if the user has bonus files, consume one and skip the shortener.
+  const { consumeBonusFile } = await import("./engagement");
+  const usedBonus = await consumeBonusFile(db, userChatId);
+
+  // Link-shortener verification gate (no-op when disabled or when a bonus was used).
+  if (!usedBonus) {
     const { requireVerification } = await import("./shortener");
     if (await requireVerification(db, userChatId, code)) return "";
   }
