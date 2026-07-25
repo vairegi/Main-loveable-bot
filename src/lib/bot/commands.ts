@@ -1568,6 +1568,14 @@ register("stats", {
       .order("fetch_count", { ascending: false })
       .limit(10);
 
+    // Unique users who fetched a file today / in the last 7 days.
+    const [{ data: fetchActorsToday }, { data: fetchActors7d }] = await Promise.all([
+      db.from("activity_log").select("actor_id").eq("action", "file_fetch").gte("created_at", startOfToday).limit(20000),
+      db.from("activity_log").select("actor_id").eq("action", "file_fetch").gte("created_at", weekAgo).limit(50000),
+    ]);
+    const uniqueFetchersToday = new Set((fetchActorsToday ?? []).map((r) => String(r.actor_id ?? ""))).size;
+    const uniqueFetchers7d = new Set((fetchActors7d ?? []).map((r) => String(r.actor_id ?? ""))).size;
+
     const { data: backupChannels } = await db.from("channels").select("telegram_chat_id, title, invite_link").eq("role", "backup");
     const backupLines: string[] = [];
     if (backupChannels?.length && postCount) {
