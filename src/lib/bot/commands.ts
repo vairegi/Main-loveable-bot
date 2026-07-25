@@ -1933,55 +1933,102 @@ register("favs", {
 });
 
 register("rfavs", {
-  help: "/rfavs &lt;code&gt; [code...] — remove posts from your favorites (accepts codes or t.me links)",
+  help: "/rfavs &lt;n&gt; [n...] — remove favorites by number from /favs (also accepts codes or t.me links)",
   handler: async ({ db, user, args }) => {
-    if (!args.length) return "Usage: /rfavs &lt;code&gt; [code...]\nTip: tap a link from /favs and copy the code, or paste the link itself.";
+    if (!args.length) return "Usage: <code>/rfavs 1</code> or <code>/rfavs 1 3 5</code> or a range <code>/rfavs 1-5</code>\nAlso accepts codes or t.me links from /favs.";
 
     // Extract a code from a raw arg: supports bare codes and t.me links containing start=get_CODE.
     const extractCode = (raw: string): string | null => {
       const m = raw.match(/start=get_([A-Za-z0-9_-]+)/);
       if (m) return m[1];
       const trimmed = raw.trim().replace(/^[<(]+|[>)]+$/g, "");
-      if (/^[A-Za-z0-9_-]+$/.test(trimmed)) return trimmed;
+      if (/^[A-Za-z0-9_-]+$/.test(trimmed) && !/^\d+$/.test(trimmed) && !/^\d+-\d+$/.test(trimmed)) return trimmed;
       return null;
     };
 
+    // Collect numeric indexes (1-based) and code strings from args.
+    const indexes = new Set<number>();
     const codes: string[] = [];
+    const badTokens: string[] = [];
     for (const a of args) {
+      const t = a.trim();
+      if (/^\d+$/.test(t)) {
+        indexes.add(parseInt(t, 10));
+        continue;
+      }
+      const rangeMatch = t.match(/^(\d+)-(\d+)$/);
+      if (rangeMatch) {
+        const from = parseInt(rangeMatch[1], 10);
+        const to = parseInt(rangeMatch[2], 10);
+        const [lo, hi] = from <= to ? [from, to] : [to, from];
+        for (let n = lo; n <= hi; n++) indexes.add(n);
+        continue;
+      }
       const c = extractCode(a);
-      if (c && !codes.includes(c)) codes.push(c);
+      if (c) {
+        if (!codes.includes(c)) codes.push(c);
+      } else {
+        badTokens.push(t);
+      }
     }
-    if (!codes.length) return "❌ Couldn't parse any post codes from your input.";
 
-    const { data: posts } = await db
-      .from("posts")
-      .select("id, code, caption")
-      .in("code", codes);
-    const pMap = new Map<string, any>();
-    for (const p of (posts as any[]) ?? []) pMap.set(p.code, p);
+    // Resolve numbered picks against the same ordering /favs uses (latest first).
+    let outOfRange: number[] = [];
+    if (indexes.size) {
+      const maxIdx = Math.max(...indexes);
+      const { data: ordered } = await db
+        .from("favorites")
+        .select("post_id, posts(code)")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(Math.max(maxIdx, 20));
+
+      const list = (ordered as any[]) ?? [];
+      for (const n of indexes) {
+        const row = list[n - 1];
+        const code = row?.posts?.code;
+        if (!code) { outOfRange.push(n); continue; }
+        if (!codes.includes(code)) codes.push(code);
+      }
+    }
+
+    if (!codes.length && !outOfRange.length && !badTokens.length) {
+      return "❌ Couldn't parse any numbers or codes from your input.";
+    }
 
     const removed: string[] = [];
     const notSaved: string[] = [];
     const unknown: string[] = [];
 
-    for (const code of codes) {
-      const p = pMap.get(code);
-      if (!p) { unknown.push(code); continue; }
-      const { data: del, error } = await db
-        .from("favorites")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("post_id", p.id)
-        .select("post_id");
-      if (error) { unknown.push(code); continue; }
-      if (del && del.length) removed.push(code); else notSaved.push(code);
+    if (codes.length) {
+      const { data: posts } = await db
+        .from("posts")
+        .select("id, code, caption")
+        .in("code", codes);
+      const pMap = new Map<string, any>();
+      for (const p of (posts as any[]) ?? []) pMap.set(p.code, p);
+
+      for (const code of codes) {
+        const p = pMap.get(code);
+        if (!p) { unknown.push(code); continue; }
+        const { data: del, error } = await db
+          .from("favorites")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("post_id", p.id)
+          .select("post_id");
+        if (error) { unknown.push(code); continue; }
+        if (del && del.length) removed.push(code); else notSaved.push(code);
+      }
     }
 
     const lines: string[] = [];
     if (removed.length) lines.push(`💔 Removed ${removed.length} from favorites: ${removed.map((c) => `<code>${escapeHtml(c)}</code>`).join(", ")}`);
     if (notSaved.length) lines.push(`ℹ️ Not in your favorites: ${notSaved.map((c) => `<code>${escapeHtml(c)}</code>`).join(", ")}`);
     if (unknown.length) lines.push(`❌ Unknown code: ${unknown.map((c) => `<code>${escapeHtml(c)}</code>`).join(", ")}`);
-    return lines.join("\n");
+    if (outOfRange.length) lines.push(`❌ Out of range: ${outOfRange.join(", ")}`);
+    if (badTokens.length) lines.push(`❌ Couldn't parse: ${badTokens.map((c) => `<code>${escapeHtml(c)}</code>`).join(", ")}`);
+    return lines.join("\n") || "Nothing to do.";
   },
 });
 
