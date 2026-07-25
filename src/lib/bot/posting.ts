@@ -417,6 +417,14 @@ async function publishPost(db: SupabaseClient, post: any, targetChatId?: number 
       main_message_id: mainMessage.message_id,
     });
   }
+
+  // Notify tag subscribers (best-effort, silent on error).
+  try {
+    const { notifyTagSubscribers } = await import("./engagement");
+    await notifyTagSubscribers(db, { code: post.code, caption: post.caption ?? null }, botUsername);
+  } catch (e) {
+    console.error("notifyTagSubscribers failed:", e);
+  }
 }
 
 // -------- Deliver file to a user who clicked the deep-link --------
