@@ -1485,6 +1485,10 @@ register("stats", {
       { count: posted7d },
       { count: autodeleteQueue },
       { count: failedBackups },
+      { count: fetchesToday },
+      { count: fetches7d },
+      { count: shortenerIssued7d },
+      { count: shortenerVerified7d },
     ] = await Promise.all([
       db.from("posts").select("*", { count: "exact", head: true }),
       db.from("bot_users").select("*", { count: "exact", head: true }),
@@ -1497,6 +1501,10 @@ register("stats", {
       db.from("posts").select("*", { count: "exact", head: true }).gte("posted_at", weekAgo),
       db.from("pending_deletions").select("*", { count: "exact", head: true }),
       db.from("backup_failures").select("*", { count: "exact", head: true }),
+      db.from("activity_log").select("*", { count: "exact", head: true }).eq("action", "file_fetch").gte("created_at", startOfToday),
+      db.from("activity_log").select("*", { count: "exact", head: true }).eq("action", "file_fetch").gte("created_at", weekAgo),
+      db.from("activity_log").select("*", { count: "exact", head: true }).eq("action", "shortener_issued").gte("created_at", weekAgo),
+      db.from("activity_log").select("*", { count: "exact", head: true }).eq("action", "shortener_verified").gte("created_at", weekAgo),
     ]);
 
     const { data: topFiles } = await db
