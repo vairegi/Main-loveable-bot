@@ -2788,15 +2788,49 @@ register("activity", {
       .limit(n);
     if (error) return `❌ ${escapeHtml(error.message)}`;
     if (!data?.length) return "No activity yet.";
-    const lines = data.map((r: any, i: number) => {
-      const when = new Date(r.created_at).toISOString().replace("T", " ").slice(0, 19);
-      const who = r.actor_username ? `@${r.actor_username}` : String(r.actor_id ?? "—");
-      let detail = "";
-      if (r.details) {
-        const s = typeof r.details === "string" ? r.details : JSON.stringify(r.details);
-        detail = ` · ${s.slice(0, 120)}`;
+    const ACTION_ICONS: Record<string, string> = {
+      file_fetch: "📥", favorite_add: "❤️", favorite_remove: "💔",
+      shortener_issued: "🔗", shortener_verified: "✅", shortener_bypass: "🚨",
+      user_banned: "🚫", user_unbanned: "🔓", broadcast_sent: "📣",
+      post_created: "📝", post_deleted: "🗑", backup_done: "💾",
+      admin_added: "👑", admin_removed: "⬇️", start: "▶️",
+    };
+    const fmtRel = (iso: string) => {
+      const diff = Math.max(0, Date.now() - new Date(iso).getTime());
+      const s = Math.floor(diff / 1000);
+      if (s < 60) return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    };
+    const fmtDetails = (d: any): string => {
+      if (!d) return "";
+      let obj: any = d;
+      if (typeof d === "string") { try { obj = JSON.parse(d); } catch { return escapeHtml(d.slice(0, 80)); } }
+      if (obj && typeof obj === "object") {
+        const parts: string[] = [];
+        for (const [k, v] of Object.entries(obj)) {
+          if (v == null || v === "") continue;
+          const val = typeof v === "object" ? JSON.stringify(v) : String(v);
+          parts.push(`${escapeHtml(k)}=<code>${escapeHtml(val.slice(0, 40))}</code>`);
+          if (parts.length >= 4) break;
+        }
+        return parts.join(" ");
       }
-      return `${i + 1}. <code>${when}</code> · ${escapeHtml(who)} · <b>${escapeHtml(r.action)}</b>${escapeHtml(detail)}`;
+      return escapeHtml(String(obj).slice(0, 80));
+    };
+    const lines = data.map((r: any, i: number) => {
+      const icon = ACTION_ICONS[r.action] ?? "•";
+      const rel = fmtRel(r.created_at);
+      const who = r.actor_username
+        ? `<a href="tg://user?id=${r.actor_id ?? 0}">@${escapeHtml(r.actor_username)}</a>`
+        : `<code>${escapeHtml(String(r.actor_id ?? "—"))}</code>`;
+      const detail = fmtDetails(r.details);
+      const head = `${i + 1}. ${icon} <b>${escapeHtml(r.action)}</b> · <i>${rel}</i>`;
+      const body = `   ${who}${detail ? ` — ${detail}` : ""}`;
+      return `${head}\n${body}`;
     });
     return [`<b>📜 Activity — latest ${data.length}</b>`, "", ...lines].join("\n");
   },
