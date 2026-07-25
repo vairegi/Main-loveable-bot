@@ -1619,7 +1619,7 @@ register("stats", {
       .slice(0, 10)
       .map(
         (p, i) =>
-          `${i + 1}. <a href="https://t.me/${statsBotUsername}?start=get_${p.code}"><code>${p.code}</code></a> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`,
+          `${i + 1}. <a href="https://t.me/${statsBotUsername}?start=get_${p.code}">${escapeHtml(String(p.code))}</a> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`,
       );
 
     const convRate =
