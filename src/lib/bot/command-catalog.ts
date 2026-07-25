@@ -55,7 +55,7 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "recent", role: "user", description: "10 most recently published posts." },
       { name: "trending", role: "user", description: "Most fetched posts in the last 7 days." },
       { name: "similar", role: "user", syntax: "<#tag>", description: "Find posts matching a tag among already-published posts." },
-      { name: "leaderboard", role: "user", description: "Top savers by fetches in the last 30 days." },
+      { name: "leaderboard", role: "user", description: "Top 10 savers in the last 30 days, plus your own rank." },
     ],
   },
   {
