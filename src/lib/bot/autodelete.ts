@@ -68,7 +68,7 @@ export async function queueDeletion(
   await db.from("pending_deletions").insert(rows);
 }
 
-export async function processPendingDeletions(db: SupabaseClient, limit = 200): Promise<{ deleted: number; failed: number }> {
+export async function processPendingDeletions(db: SupabaseClient, limit = 2000): Promise<{ deleted: number; failed: number }> {
   const { data } = await db
     .from("pending_deletions")
     .select("id, chat_id, message_id")
@@ -79,16 +79,27 @@ export async function processPendingDeletions(db: SupabaseClient, limit = 200): 
   let deleted = 0;
   let failed = 0;
   const done: number[] = [];
-  for (const row of data) {
-    try {
-      await deleteMessage(row.chat_id as number, row.message_id as number);
-      deleted++;
-    } catch {
-      // Even on failure, drop the row so we don't retry forever (message may already be gone).
-      failed++;
-    }
-    done.push(row.id as number);
+  const CONCURRENCY = 25;
+  for (let i = 0; i < data.length; i += CONCURRENCY) {
+    const chunk = data.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (row) => {
+        try {
+          await deleteMessage(row.chat_id as number, row.message_id as number);
+          deleted++;
+        } catch {
+          failed++;
+        }
+        done.push(row.id as number);
+      }),
+    );
   }
-  if (done.length) await db.from("pending_deletions").delete().in("id", done);
+  if (done.length) {
+    // Delete in batches to keep the IN() list manageable
+    for (let i = 0; i < done.length; i += 500) {
+      await db.from("pending_deletions").delete().in("id", done.slice(i, i + 500));
+    }
+  }
   return { deleted, failed };
 }
+
