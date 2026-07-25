@@ -110,7 +110,7 @@ export async function requireVerification(
   const { data: bu } = await db
     .from("bot_users")
     .select("sh_verified_until, sh_files_used")
-    .eq("telegram_id", userChatId)
+    .eq("telegram_user_id", userChatId)
     .maybeSingle();
 
   const now = Date.now();
@@ -140,7 +140,7 @@ export async function requireVerification(
       sh_pending_verified_at: null,
       sh_pending_code: code,
     })
-    .eq("telegram_id", userChatId);
+    .eq("telegram_user_id", userChatId);
 
   const verifyUrl = `${webBase}/v/${token}`;
   const shortUrl = await shortenUrl(cfg.api, verifyUrl);
@@ -168,10 +168,10 @@ export async function bumpFilesUsed(db: SupabaseClient, userChatId: number): Pro
   const { data } = await db
     .from("bot_users")
     .select("sh_files_used")
-    .eq("telegram_id", userChatId)
+    .eq("telegram_user_id", userChatId)
     .maybeSingle();
   const next = (data?.sh_files_used ?? 0) + 1;
-  await db.from("bot_users").update({ sh_files_used: next }).eq("telegram_id", userChatId);
+  await db.from("bot_users").update({ sh_files_used: next }).eq("telegram_user_id", userChatId);
 }
 
 async function notifyAdminsOfBypass(
@@ -211,7 +211,7 @@ export async function handleVerifyDeepLink(
     .select(
       "telegram_id, username, sh_pending_token, sh_pending_issued_at, sh_pending_verified_at, sh_pending_code, sh_bypass_count",
     )
-    .eq("telegram_id", userChatId)
+    .eq("telegram_user_id", userChatId)
     .maybeSingle();
 
   if (!bu || bu.sh_pending_token !== token) {
@@ -233,7 +233,7 @@ export async function handleVerifyDeepLink(
         sh_pending_verified_at: null,
         sh_pending_code: null,
       })
-      .eq("telegram_id", userChatId);
+      .eq("telegram_user_id", userChatId);
     const seconds = Math.round((nowMs - issued) / 1000);
     await notifyAdminsOfBypass(db, userChatId, bu.username ?? null, seconds, "Skipped verify page");
     return "🚫 Verification page was not visited. Please open the shortener link fully and try again.";
@@ -250,7 +250,7 @@ export async function handleVerifyDeepLink(
         sh_pending_verified_at: null,
         sh_pending_code: null,
       })
-      .eq("telegram_id", userChatId);
+      .eq("telegram_user_id", userChatId);
     await notifyAdminsOfBypass(
       db,
       userChatId,
@@ -274,7 +274,7 @@ export async function handleVerifyDeepLink(
       sh_pending_verified_at: null,
       sh_pending_code: null,
     })
-    .eq("telegram_id", userChatId);
+    .eq("telegram_user_id", userChatId);
 
   if (pendingCode) {
     const { deliverFileByCode } = await import("./posting");
@@ -292,7 +292,7 @@ export async function markVerifyVisited(
 ): Promise<{ ok: boolean; botUsername?: string }> {
   const { data: bu } = await db
     .from("bot_users")
-    .select("telegram_id, sh_pending_verified_at")
+    .select("telegram_user_id, sh_pending_verified_at")
     .eq("sh_pending_token", token)
     .maybeSingle();
   if (!bu) return { ok: false };
@@ -300,7 +300,7 @@ export async function markVerifyVisited(
     await db
       .from("bot_users")
       .update({ sh_pending_verified_at: new Date().toISOString() })
-      .eq("telegram_id", bu.telegram_id);
+      .eq("telegram_user_id", bu.telegram_user_id);
   }
   const botUsername = await getBotUsername();
   return { ok: true, botUsername };
