@@ -1,74 +1,71 @@
-You picked **1, 2, 5, 7, 11, 13, 14, 16, 17, 18, 20**. Here's how I'd sequence them so each phase is independently useful and testable.
+# Plan — new bot features
 
-## Phase 1 — Performance + safety (low risk, high ROI)
+Big batch. Before I build, a few clarifications inline (marked ❓) so we don't ship the wrong thing.
 
-**#1 Fix slow backup scanner**
-- Rewrite `scanDatabaseToBackups` in `src/lib/bot/backups.ts` from `OFFSET` pagination to keyset: `WHERE id > :last_id ORDER BY id LIMIT N`.
-- Add index `posts(id)` is already the PK, so no new index needed; verify EXPLAIN.
+## 1. Discovery commands (users)
 
-**#2 Cache `bot_settings` per request**
-- Add a tiny in-memory cache keyed by `key` inside `src/lib/bot/db.ts` (or a new `settings.ts`), scoped to one webhook invocation (Map cleared per request via the dispatcher).
-- Replace all direct `bot_settings` reads with `getSetting(db, key)`.
+Only pull from **posts that have been posted to a main channel** (i.e. exist in `post_copies`), never raw database queue.
 
-**#20 Confirm-before-destroy**
-- Wrap `/reset`, `/resetall`, `/removebackup` handlers with a two-step inline-keyboard prompt (`Yes, wipe` / `Cancel`). Reuse the existing callback router.
-- Store the pending destructive action in `search_sessions`-style row keyed by `user_id + action`, expires after 60s.
+- **/random** — pick 1 random posted post, send as a mini card with a deep link (Get File button).
+- **/recent** — last 10 posted posts, numbered list with deep links.
+- **/trending** — top 10 posts by fetch count in the last 7 days (from `activity_log` where `action='file_fetch'`).
+- **/similar `<tag>`** — user passes a hashtag like `#incest`. We match posts whose caption contains that hashtag (case-insensitive), return top 10 most recent posted ones with deep links.
+  - ❓ If no `#` prefix given, should I auto-add one, or reject? Default: auto-add.
 
-## Phase 2 — New commands (isolated additions)
+## 2. /leaderboard
+Top 10 users by **files fetched** (last 30 days), with fetch counts. Admin-only? Or public to users too?
+- ❓ Default: **public to users**, shows first name + count, no usernames leaked.
 
-**#5 `/stats` upgrade** — aggregate query over `bot_users`, `posts`, `activity_log`, `backup_failures`:
-- DAU/WAU/MAU, posts published today/7d, top 10 fetched posts, backup lag (max age of un-backed-up post), failed-broadcast count.
+## 3. Scheduled posting — /postlater
 
-**#7 `/duplicates`** — group `posts` by normalized caption hash and by `media->>0->>'file_unique_id'`; list top N groups with post ids. Admin-only.
+Admin-only. Two shapes:
 
-**#18 `/doctor`** — self-check:
-- Webhook info from Telegram getWebhookInfo
-- DB roundtrip (`select 1`)
-- Main channel test (`getChat` on each `channels` row where role='main')
-- Backup channel test (same for role='backup')
-- Drip cron last-run age (from `bot_settings.drip_last_run`)
-- Auto-delete queue depth
+- `/postlater <duration> <code|link>` — schedule an existing DB post by code/link.
+- Reply to a media message in the bot with `/postlater <duration>` — bot ingests that media as a new DB post, then schedules it.
 
-**#11 Better `/search` pagination**
-- Extend `search_sessions.hits` to hold all results, add `page` field.
-- Inline keyboard: `⬅ Prev  ·  1/5  ·  Next ➡` alongside checkboxes.
-- Callback data: `search:page:<session_id>:<n>`.
+Duration parser: `5h`, `2m`, `10m`, `1d`, or combined `5h 2m` / `1h30m`.
 
-## Phase 3 — User-facing features + ops
+Storage: new `scheduled_posts` table `(id, post_id, run_at, created_by, status, created_at)`.
+Runner: piggyback the existing per-minute drip cron — before draining the drip queue, promote any `scheduled_posts` whose `run_at <= now()` into an immediate post to main channels.
 
-**#13 Favorites**
-- New table `favorites(user_id, post_id, created_at, PRIMARY KEY(user_id, post_id))` with RLS + grants.
-- Add ❤️ button to every published-to-user post; toggle via callback `fav:toggle:<post_id>`.
-- `/favs` command lists their saved posts (paginated).
+- ❓ Where should replied-to media be stored — as a normal DB post (so it also enters the regular drip queue for future posting) or as a **one-shot** that only fires at the scheduled time and is not queued? Default: **one-shot**, marked so drip skips it.
 
-**#14 Rating**
-- New table `post_ratings(post_id, user_id, rating smallint, created_at, PRIMARY KEY(post_id, user_id))`.
-- 👍 / 👎 buttons on posts, callback `rate:<post_id>:<+1|-1>`.
-- Aggregate score shown to admins in `/find <id>` and `/stats`.
+## 4. /broadcastlater
+Admin-only. `/broadcastlater <duration> <text>` or reply to a message with `/broadcastlater <duration>`.
+Reuses existing `broadcast_jobs` table — adds a `scheduled_for` column and a `status='scheduled'` state. The broadcast cron promotes scheduled jobs when due.
 
-**#16 Health endpoint**
-- New public route `src/routes/api/public/health.ts` returning JSON:
-  ```
-  { ok, webhook_lag_ms, last_backup_age_s, pending_deletions, backup_failures, updated_at }
-  ```
-- No auth (safe read-only aggregates, no PII).
+## 5. /exportusers
+Admin-only. Generate CSV of `bot_users` (telegram_user_id, username, first_name, last_seen, banned, fetch_count) and upload as a document to the admin who ran it. Uses Telegram `sendDocument` with `InputFile` (multipart).
 
-**#17 Admin web page at `/admin`**
-- Route `src/routes/_authenticated/admin.tsx` gated by the managed auth layout.
-- Add a `has_role` check via `requireSupabaseAuth` server fn — only Telegram admins linked to a Supabase user can view.
-- Tabs: **Activity log**, **Bot users**, **Posts**, **Backup failures**. Simple sortable tables + search box. No mutations in v1 — read-only viewer.
-- Requires the admin to sign into the web app with the email they register via a new bot command `/linkweb <email>` (sends a magic-link tie-up). If you'd rather skip web auth entirely, I can gate `/admin` behind a shared password in Phase 3 — say the word.
+## 6. /stats upgrades
+Append to existing `/stats` output:
+- **Daily active users** (last 24h, distinct actors in `activity_log`)
+- **Fetches today** (count of `file_fetch` in last 24h)
+- **Shortener conversion rate** (last 7d): `verifications_completed / verifications_issued` from `bot_users` sh_* columns + `activity_log` shortener events. If we don't currently log "issued", add a lightweight counter.
 
-## Technical notes
+## 7. Live tail of activity_log (web admin)
+On the existing `/admin` page → **Activity** tab: add realtime tail. Uses Supabase Realtime `postgres_changes` on `public.activity_log` INSERT, prepends new rows to the table live. Enable realtime for that table via migration (`ALTER PUBLICATION supabase_realtime ADD TABLE public.activity_log`).
 
-- All new tables get `GRANT` + RLS + policies in the same migration (`authenticated` + `service_role`, no `anon`).
-- New callbacks (`fav:*`, `rate:*`, `search:page:*`, `confirm:*`) route through the existing `handleSearchCallback` dispatcher — I'll refactor it into a small router if it grows past ~4 prefixes.
-- Every new command registered in `src/lib/bot/commands.ts` with admin/super-admin flags as appropriate.
+## Schema changes (one migration)
+- `scheduled_posts` table + GRANTs + RLS (service_role only; policies deny others).
+- `broadcast_jobs`: add `scheduled_for timestamptz null`.
+- `activity_log`: add to `supabase_realtime` publication + `REPLICA IDENTITY FULL` if needed.
+- Optionally: `bot_settings` counters for shortener issued/completed if not already tracked.
 
-## Suggested ship order
+## Files touched
+- `src/lib/bot/commands.ts` — new commands + /stats extension
+- `src/lib/bot/command-catalog.ts` — catalog entries (per project rule)
+- `src/lib/bot/discovery.ts` (new) — random/recent/trending/similar helpers
+- `src/lib/bot/scheduling.ts` (new) — postlater + broadcastlater helpers
+- `src/lib/bot/export.ts` (new) — CSV + sendDocument
+- `src/routes/api/public/hooks/drip.ts` — promote due scheduled_posts
+- `src/routes/api/public/hooks/broadcast.ts` — promote due scheduled broadcasts
+- `src/routes/_authenticated/admin.tsx` — realtime tail on Activity tab
+- one Supabase migration
 
-Phase 1 first (one turn) → verify in preview → Phase 2 (one turn) → Phase 3 (one or two turns depending on how you want #17's auth).
+## Please confirm the ❓ items
+1. `/similar` without `#` → auto-add? (default yes)
+2. `/leaderboard` visible to normal users? (default yes, first name only)
+3. `/postlater` on replied media → one-shot, not queued? (default yes)
 
-**One decision I need from you before Phase 3:** for the `/admin` web page (#17), do you want (a) full Supabase magic-link auth tied to Telegram admin IDs, or (b) a simpler shared-password gate? (a) is more work but proper; (b) ships in 15 minutes.
-
-Reply "go" to start Phase 1, or tell me to reorder/drop anything.
+Reply with any overrides, or just "go" to build with the defaults.
