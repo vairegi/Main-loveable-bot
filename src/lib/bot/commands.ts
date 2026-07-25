@@ -190,6 +190,17 @@ register("start", {
       const msg = await handleVerifyDeepLink(db, chatId, token);
       return msg || null;
     }
+    if (payload && payload.startsWith("ref_")) {
+      const referrerId = Number(payload.slice("ref_".length));
+      if (Number.isFinite(referrerId) && referrerId > 0) {
+        const { registerReferral } = await import("./engagement");
+        const r = await registerReferral(db, referrerId, user.id);
+        if (r.granted) {
+          return `👋 Welcome! You joined via a referral link — your friend earned bonus files.\n\nSend /help to see what I can do.`;
+        }
+      }
+      // fall through to normal welcome/bootstrap
+    }
 
     // Bootstrap: if no admins exist, first /start becomes super-admin
     const { count, error: countError } = await db.from("admins").select("*", { count: "exact", head: true });
