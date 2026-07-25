@@ -220,8 +220,12 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "unban", role: "admin", syntax: "<user_id>", description: "Remove ban." },
       { name: "banlist", role: "admin", description: "Show banned users." },
       { name: "unbanall", role: "admin", description: "Unban every banned user." },
-      
-      
+      { name: "warn", role: "admin", syntax: "<user_id> [reason]", description: `Warn a user. Reaching 3 warnings auto-bans them.` },
+      { name: "warns", role: "admin", syntax: "<user_id>", description: "Show a user's warning history." },
+      { name: "unwarn", role: "admin", syntax: "<user_id>", description: "Clear all warnings for a user." },
+      { name: "health", role: "admin", description: "Live health snapshot: queues, cron ages, failures." },
+      { name: "audit", role: "admin", syntax: "[n]", description: "Show the latest admin audit entries (default 20, max 100)." },
+
       { name: "favsall", role: "admin", description: "Top savers ranked by total saves." },
       { name: "favsrecent", role: "admin", description: "Show recent favorites across all users." },
       { name: "whosaved", role: "admin", syntax: "<code>", description: "List users who saved a specific post." },
