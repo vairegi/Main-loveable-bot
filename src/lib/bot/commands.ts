@@ -247,17 +247,34 @@ register("help", {
       return lines.join("\n");
     }
 
-    // Users get a readable card: one command per line with its description.
-    const lines: string[] = ["<b>📖 Commands</b>", "<i>Tap a command to run it.</i>"];
+    // Users get a styled help menu (header box + quoted command blocks).
+    const short = (s: string) => {
+      const first = s.split(/(?<=\.)\s/)[0].replace(/\.$/, "");
+      return escapeHtml(first.length > 60 ? first.slice(0, 57).trimEnd() + "…" : first);
+    };
+
+    const lines: string[] = ["<b>┌───────────────┐</b>", "<b>│    HELP  MENU    │</b>", "<b>└───────────────┘</b>"];
     for (const cat of cats) {
-      lines.push("", `<b>${cat.emoji} ${cat.title}</b>`, "━━━━━━━━━━━━━━");
-      for (const c of cat.commands) {
-        const cmd = c.syntax ? `/${c.name} ${escapeHtml(c.syntax)}` : `/${c.name}`;
-        lines.push(`<b>${cmd}</b>\n   ↳ ${escapeHtml(c.description)}`);
-      }
+      const rows = cat.commands
+        .map((c) => {
+          const cmd = c.syntax ? `/${c.name} ${escapeHtml(c.syntax)}` : `/${c.name}`;
+          return `➤ <b>${cmd}</b> — <i>${short(c.description)}</i>`;
+        })
+        .join("\n");
+      lines.push("", `◆ <b>${cat.emoji} ${cat.title}</b>`, `<blockquote>${rows}</blockquote>`);
     }
 
+    lines.push(
+      "",
+      "◆ <b>How to Use</b>",
+      "<blockquote>❶ Tap any command above\n❷ Send it to the bot\n❸ Use ❤️ under a file to save it\n❹ Check saves with /favs</blockquote>",
+      "",
+      "◆ <b>Tips</b>",
+      "<blockquote>◇ /similar &lt;#tag&gt; finds more like it\n◇ Keep a daily streak with /streak</blockquote>",
+    );
+
     return lines.join("\n");
+
   },
 
 });
