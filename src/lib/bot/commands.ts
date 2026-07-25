@@ -1552,6 +1552,11 @@ register("stats", {
       .slice(0, 10)
       .map((p, i) => `${i + 1}. <code>${p.code}</code> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`);
 
+    const convRate =
+      shortenerIssued7d && shortenerIssued7d > 0
+        ? `${Math.round(((shortenerVerified7d ?? 0) / shortenerIssued7d) * 100)}% (${shortenerVerified7d ?? 0}/${shortenerIssued7d})`
+        : "n/a";
+
     return [
       "<b>📊 Bot stats</b>",
       "",
@@ -1561,6 +1566,10 @@ register("stats", {
       "<b>👥 Users</b>",
       `Total: <b>${userCount ?? 0}</b> · Banned: ${bannedCount ?? 0}`,
       `Active: <b>${dau ?? 0}</b> DAU · ${wau ?? 0} WAU · ${mau ?? 0} MAU`,
+      "",
+      "<b>📈 Engagement</b>",
+      `Fetches: <b>${fetchesToday ?? 0}</b> today · ${fetches7d ?? 0} in last 7d`,
+      `Shortener conversion (7d): <b>${convRate}</b>`,
       "",
       `<b>⏱️ Queues</b>`,
       `Autodelete pending: ${autodeleteQueue ?? 0}`,
