@@ -455,6 +455,12 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
     return "";
   }
 
+  // Link-shortener verification gate (no-op when disabled).
+  {
+    const { requireVerification } = await import("./shortener");
+    if (await requireVerification(db, userChatId, code)) return "";
+  }
+
   const sourceChatId = post.source_chat_id ? chatId(post.source_chat_id) : undefined;
   const sourceMessageId = numericMessageId(post.source_message_id);
   const media = mediaWithSource((post.media ?? {}) as TgMedia, sourceMessageId);

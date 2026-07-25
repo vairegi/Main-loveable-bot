@@ -4,7 +4,7 @@
 // server-side (timestamps used for bypass detection), then redirect them
 // back to the bot with a signed deep-link payload.
 
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/v/$token")({
   server: {
