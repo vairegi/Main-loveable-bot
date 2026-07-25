@@ -39,6 +39,11 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "whoami", role: "user", description: "Show your Telegram ID and role." },
       { name: "favs", role: "user", description: "List posts you've saved with ❤️." },
       { name: "rfavs", role: "user", syntax: "<n> [n...]", description: "Remove favorites by number from /favs (e.g. /rfavs 1 or /rfavs 1-5). Also accepts codes or t.me links." },
+      { name: "mystats", role: "user", description: "Your fetches, favorites, streak, and referral summary." },
+      { name: "streak", role: "user", description: "Current and longest daily-fetch streak." },
+      { name: "referral", role: "user", description: "Get your invite link and bonus-file balance." },
+      { name: "notify", role: "user", syntax: "<#tag>", description: "Subscribe to DM alerts when a new post with that hashtag is published." },
+      { name: "unnotify", role: "user", syntax: "<#tag|all>", description: "Unsubscribe from a tag (or all tags)." },
     ],
   },
   {
