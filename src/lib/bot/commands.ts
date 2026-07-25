@@ -2851,8 +2851,203 @@ register("activity", {
   },
 });
 
+// ---------------- Engagement: streak, referral, notify, mystats ----------------
+register("streak", {
+  help: "/streak — daily-fetch streak",
+  handler: async ({ db, user }) => {
+    const { getStreak } = await import("./engagement");
+    const s = await getStreak(db, user.id);
+    if (!s || !s.last_fetch_day) return "🔥 No streak yet — fetch a file to start one.";
+    const today = new Date().toISOString().slice(0, 10);
+    const active = s.last_fetch_day === today;
+    return [
+      `🔥 <b>Your streak</b>`,
+      `Current: <b>${s.current_streak}</b> day${s.current_streak === 1 ? "" : "s"}${active ? " (active today)" : ""}`,
+      `Longest: <b>${s.longest_streak}</b>`,
+      `Last fetch: <code>${s.last_fetch_day}</code>`,
+    ].join("\n");
+  },
+});
 
+register("referral", {
+  help: "/referral — invite link and bonus balance",
+  handler: async ({ db, user }) => {
+    const { getReferralStats } = await import("./engagement");
+    const { getBotUsername } = await import("./telegram");
+    const [stats, botUsername] = await Promise.all([getReferralStats(db, user.id), getBotUsername()]);
+    const link = `https://t.me/${botUsername}?start=ref_${user.id}`;
+    return [
+      `🎁 <b>Your referral link</b>`,
+      `<code>${link}</code>`,
+      "",
+      `Invited: <b>${stats.invited}</b>`,
+      `Bonus files (skip shortener): <b>${stats.bonusRemaining}</b>`,
+      `Total earned: <b>${stats.totalEarned}</b>`,
+      "",
+      `You earn <b>+${stats.perReferral}</b> bonus files for every new user who joins via your link.`,
+    ].join("\n");
+  },
+});
 
+register("notify", {
+  help: "/notify <#tag> — DM alerts when a new post has that tag",
+  handler: async ({ db, user, args }) => {
+    const raw = args[0];
+    if (!raw) return "Usage: /notify #tag";
+    const { addTagSubscription, normalizeTag } = await import("./engagement");
+    const t = normalizeTag(raw);
+    if (!t) return "❌ Invalid tag.";
+    const ok = await addTagSubscription(db, user.id, t);
+    if (!ok) return "❌ Couldn't save subscription.";
+    return `🔔 Subscribed to <b>#${escapeHtml(t)}</b>. You'll get a DM when a new post with that tag is published.\n\nUnsubscribe: /unnotify ${escapeHtml(t)}`;
+  },
+});
+
+register("unnotify", {
+  help: "/unnotify <#tag|all> — stop tag notifications",
+  handler: async ({ db, user, args }) => {
+    const raw = args[0];
+    if (!raw) return "Usage: /unnotify #tag  (or /unnotify all)";
+    if (raw.toLowerCase() === "all") {
+      await db.from("tag_subscriptions").delete().eq("user_id", user.id);
+      return "🔕 Cleared all your tag subscriptions.";
+    }
+    const { removeTagSubscription, normalizeTag } = await import("./engagement");
+    const t = normalizeTag(raw);
+    if (!t) return "❌ Invalid tag.";
+    await removeTagSubscription(db, user.id, t);
+    return `🔕 Unsubscribed from <b>#${escapeHtml(t)}</b>.`;
+  },
+});
+
+register("mystats", {
+  help: "/mystats — your fetches, favorites, streak, referrals",
+  handler: async ({ db, user }) => {
+    const { getStreak, getReferralStats, listTagSubscriptions } = await import("./engagement");
+    const [bu, favCount, streak, ref, subs] = await Promise.all([
+      db.from("bot_users").select("fetch_count, first_seen, last_seen").eq("telegram_user_id", user.id).maybeSingle(),
+      db.from("favorites").select("post_id", { count: "exact", head: true }).eq("user_id", user.id),
+      getStreak(db, user.id),
+      getReferralStats(db, user.id),
+      listTagSubscriptions(db, user.id),
+    ]);
+    return [
+      `👤 <b>Your stats</b>`,
+      `Fetches: <b>${bu.data?.fetch_count ?? 0}</b>`,
+      `Favorites: <b>${favCount.count ?? 0}</b>`,
+      `Streak: <b>${streak?.current_streak ?? 0}</b> (longest ${streak?.longest_streak ?? 0})`,
+      `Referrals: <b>${ref.invited}</b> · Bonus files: <b>${ref.bonusRemaining}</b>`,
+      `Tag alerts: <b>${subs.length}</b>${subs.length ? ` — ${subs.slice(0, 10).map((t) => "#" + escapeHtml(t)).join(" ")}` : ""}`,
+    ].join("\n");
+  },
+});
+
+// ---------------- Warnings ----------------
+register("warn", {
+  help: "/warn <user_id> [reason] — warn a user (3 = auto-ban)",
+  adminOnly: true,
+  handler: async ({ db, user, args, rawText }) => {
+    const target = Number(args[0]);
+    if (!target) return "Usage: /warn <user_id> [reason]";
+    const reason = rawText.replace(/^\/warn(@\S+)?\s+\S+\s*/i, "").trim() || null;
+    const { addWarning, WARN_LIMIT } = await import("./warnings");
+    const r = await addWarning(db, target, user.id, reason);
+    if (r.error) return `❌ ${r.error}`;
+    const { writeAudit } = await import("./audit");
+    await writeAudit(db, user, r.banned ? "warn_auto_ban" : "warn_user", String(target), { reason, count: r.count });
+    return r.banned
+      ? `🚫 <code>${target}</code> reached ${WARN_LIMIT} warnings and has been auto-banned.`
+      : `⚠️ Warned <code>${target}</code> (${r.count}/${WARN_LIMIT}).${reason ? ` Reason: ${escapeHtml(reason)}` : ""}`;
+  },
+});
+
+register("warns", {
+  help: "/warns <user_id> — show warnings history",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    const target = Number(args[0]);
+    if (!target) return "Usage: /warns <user_id>";
+    const { listWarnings } = await import("./warnings");
+    const rows = await listWarnings(db, target);
+    if (!rows.length) return `No warnings for <code>${target}</code>.`;
+    const lines = rows.map((r: any, i: number) => {
+      const when = new Date(r.created_at).toISOString().replace("T", " ").slice(0, 16);
+      return `${i + 1}. <i>${when}</i> by <code>${r.admin_id}</code>${r.reason ? ` — ${escapeHtml(r.reason)}` : ""}`;
+    });
+    return [`<b>⚠️ Warnings for <code>${target}</code></b> — ${rows.length} total`, "", ...lines].join("\n");
+  },
+});
+
+register("unwarn", {
+  help: "/unwarn <user_id> — clear warnings",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const target = Number(args[0]);
+    if (!target) return "Usage: /unwarn <user_id>";
+    const { clearWarnings } = await import("./warnings");
+    const n = await clearWarnings(db, target);
+    const { writeAudit } = await import("./audit");
+    await writeAudit(db, user, "unwarn_user", String(target), { cleared: n });
+    return `✅ Cleared ${n} warning${n === 1 ? "" : "s"} for <code>${target}</code>.`;
+  },
+});
+
+// ---------------- Health & Audit ----------------
+register("health", {
+  help: "/health — live health snapshot",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const now = Date.now();
+    const [pending, pendingDue, failures, lastBackup, lastPost, queue, dripLast, backupLast] = await Promise.all([
+      db.from("pending_deletions").select("id", { count: "exact", head: true }),
+      db.from("pending_deletions").select("id", { count: "exact", head: true }).lte("delete_at", new Date().toISOString()),
+      db.from("backup_failures").select("id", { count: "exact", head: true }),
+      db.from("backup_copies").select("created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      db.from("posts").select("posted_at").not("posted_at", "is", null).order("posted_at", { ascending: false }).limit(1).maybeSingle(),
+      db.from("posts").select("id", { count: "exact", head: true }).is("posted_at", null),
+      db.from("bot_settings").select("value").eq("key", "drip_last_run").maybeSingle(),
+      db.from("bot_settings").select("value").eq("key", "auto_backup_last_run").maybeSingle(),
+    ]);
+    const age = (ts: string | null | undefined) => {
+      if (!ts) return "—";
+      const s = Math.floor((now - new Date(ts).getTime()) / 1000);
+      if (s < 60) return `${s}s ago`;
+      if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+      if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+      return `${Math.floor(s / 86400)}d ago`;
+    };
+    const dripAt = (dripLast.data?.value as any)?.at ?? null;
+    const backupAt = (backupLast.data?.value as any)?.at ?? null;
+    return [
+      `🩺 <b>Health</b>`,
+      `Queue: <b>${queue.count ?? 0}</b> waiting`,
+      `Last post: ${age(lastPost.data?.posted_at)}`,
+      `Drip cron: ${age(dripAt)}`,
+      `Last backup: ${age(lastBackup.data?.created_at)}`,
+      `Backup cron: ${age(backupAt)}`,
+      `Backup failures: <b>${failures.count ?? 0}</b>`,
+      `Autodelete pending: <b>${pending.count ?? 0}</b> (due now: ${pendingDue.count ?? 0})`,
+    ].join("\n");
+  },
+});
+
+register("audit", {
+  help: "/audit [n] — latest admin audit entries",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    const n = Math.min(Math.max(Number(args[0]) || 20, 1), 100);
+    const { listAudit } = await import("./audit");
+    const rows = await listAudit(db, n);
+    if (!rows.length) return "No audit entries yet.";
+    const lines = rows.map((r: any, i: number) => {
+      const when = new Date(r.created_at).toISOString().replace("T", " ").slice(0, 16);
+      const who = r.admin_username ? `@${escapeHtml(r.admin_username)}` : `<code>${r.admin_id}</code>`;
+      const tgt = r.target ? ` → <code>${escapeHtml(r.target)}</code>` : "";
+      return `${i + 1}. <i>${when}</i> ${who} <b>${escapeHtml(r.action)}</b>${tgt}`;
+    });
+    return [`<b>🗂️ Audit — latest ${rows.length}</b>`, "", ...lines].join("\n");
+  },
+});
 
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
   const def = commands.get(commandName.toLowerCase());
