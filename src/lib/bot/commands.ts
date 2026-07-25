@@ -1710,7 +1710,7 @@ register("duplicates", {
 
     const { getBotUsername } = await import("./telegram");
     const botUsername = await getBotUsername();
-    const linkCode = (c: string) => `<a href="https://t.me/${botUsername}?start=get_${c}"><code>${c}</code></a>`;
+    const linkCode = (c: string) => `<a href="https://t.me/${botUsername}?start=get_${c}">${c}</a>`;
 
     const lines: string[] = [`<b>🔁 Duplicates</b> (scanned ${scanned} posts)`];
 
