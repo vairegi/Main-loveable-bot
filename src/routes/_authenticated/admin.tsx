@@ -19,9 +19,11 @@ type Tab = "activity" | "users" | "posts" | "failures";
 
 function AdminPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const checkAccess = useServerFn(checkAdminAccess);
   const fetchDashboard = useServerFn(getAdminDashboard);
   const [tab, setTab] = useState<Tab>("activity");
+  const [liveRows, setLiveRows] = useState<any[]>([]);
 
   const access = useQuery({
     queryKey: ["admin", "access"],
@@ -33,6 +35,24 @@ function AdminPage() {
     queryFn: () => fetchDashboard(),
     enabled: !!access.data?.isAdmin,
   });
+
+  // Live tail of activity_log via realtime — prepends new rows to the activity tab.
+  useEffect(() => {
+    if (!access.data?.isAdmin) return;
+    const channel = supabase
+      .channel("admin-activity-tail")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "activity_log" },
+        (payload) => {
+          setLiveRows((prev) => [payload.new, ...prev].slice(0, 50));
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [access.data?.isAdmin, queryClient]);
 
   async function signOut() {
     await supabase.auth.signOut();
