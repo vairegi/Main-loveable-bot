@@ -1363,7 +1363,7 @@ register("backupstatus", {
       db.from("bot_settings").select("value").eq("key", "auto_backup_paused").maybeSingle(),
       db.from("bot_settings").select("value").eq("key", "manual_backup_jobs").maybeSingle(),
       db.from("posts").select("id", { count: "exact", head: true }),
-      db.from("channels").select("telegram_chat_id, title").eq("role", "backup").order("created_at"),
+      db.from("channels").select("telegram_chat_id, title, invite_link").eq("role", "backup").order("created_at"),
     ]);
     const paused = Boolean((pausedRow?.value as { paused?: boolean } | null)?.paused);
     const jobs = ((jobsRow?.value as any) ?? {}) as Record<string, any>;
@@ -1394,7 +1394,12 @@ register("backupstatus", {
         const pending = Math.max(0, total - processed);
         const pct = total > 0 ? Math.floor((processed / total) * 100) : 100;
         const queued = jobs[String(cid)] ? " 🔁 queued" : "";
-        const label = b.title ? `${b.title} (<code>${cid}</code>)` : `<code>${cid}</code>`;
+        const nameTxt = b.title ? escapeHtml(b.title) : `<code>${cid}</code>`;
+        const label = b.invite_link
+          ? `<a href="${escapeHtml(b.invite_link)}">${nameTxt}</a>`
+          : b.title
+            ? `${nameTxt} (<code>${cid}</code>)`
+            : nameTxt;
         lines.push(`• ${label}: <b>${processed}</b>/<b>${total}</b> (${pct}%) — ${pending} pending${queued}`);
       }
     }
@@ -1563,7 +1568,7 @@ register("stats", {
       .order("fetch_count", { ascending: false })
       .limit(10);
 
-    const { data: backupChannels } = await db.from("channels").select("telegram_chat_id, title").eq("role", "backup");
+    const { data: backupChannels } = await db.from("channels").select("telegram_chat_id, title, invite_link").eq("role", "backup");
     const backupLines: string[] = [];
     if (backupChannels?.length && postCount) {
       for (const ch of backupChannels) {
@@ -1592,8 +1597,9 @@ register("stats", {
             ageStr = ` · oldest lag ${formatAge(ageMs)}`;
           }
         }
-        const label = ch.title ? `<b>${escapeHtml(ch.title)}</b> ` : "";
-        backupLines.push(`• ${label}<code>${ch.telegram_chat_id}</code> — ${mirrored ?? 0}/${postCount} (${lag} behind${ageStr})`);
+        const nameTxt = ch.title ? `<b>${escapeHtml(ch.title)}</b>` : `<code>${ch.telegram_chat_id}</code>`;
+        const label = ch.invite_link ? `<a href="${escapeHtml(ch.invite_link)}">${nameTxt}</a>` : nameTxt;
+        backupLines.push(`• ${label} — ${mirrored ?? 0}/${postCount} (${lag} behind${ageStr})`);
       }
     }
 
@@ -1756,10 +1762,12 @@ register("doctor", {
     });
 
     // 3. Channels — getChat on main + backup
-    const { data: chans } = await db.from("channels").select("telegram_chat_id, title, role").in("role", ["main", "backup", "database", "log"]);
+    const { data: chans } = await db.from("channels").select("telegram_chat_id, title, role, invite_link").in("role", ["main", "backup", "database", "log"]);
     for (const c of chans ?? []) {
+      const chanName = escapeHtml(String(c.title ?? c.telegram_chat_id));
+      const chanLabel = c.invite_link ? `<a href="${escapeHtml(c.invite_link)}">${chanName}</a>` : chanName;
       results.push({
-        name: `${c.role} · ${c.title ?? c.telegram_chat_id}`,
+        name: `${c.role} · ${chanLabel}`,
         ...(await check(async () => {
           const chat: any = await tg("getChat", { chat_id: c.telegram_chat_id });
           return chat?.title ?? chat?.username ?? "reachable";
