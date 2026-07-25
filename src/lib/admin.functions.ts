@@ -55,11 +55,12 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
     await requireAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const [users, posts, activity, failures] = await Promise.all([
+    const [users, posts, activity, failures, audit] = await Promise.all([
       supabaseAdmin.from("bot_users").select("telegram_user_id, username, first_name, fetch_count, last_seen, banned").order("last_seen", { ascending: false }).limit(50),
       supabaseAdmin.from("posts").select("id, code, caption, fetch_count, created_at").order("created_at", { ascending: false }).limit(50),
       supabaseAdmin.from("activity_log").select("id, actor_id, actor_username, action, details, created_at").order("created_at", { ascending: false }).limit(50),
       supabaseAdmin.from("backup_failures").select("id, post_id, backup_chat_id, attempts, last_error, updated_at").order("updated_at", { ascending: false }).limit(50),
+      supabaseAdmin.from("admin_audit").select("id, admin_id, admin_username, action, target, details, created_at").order("created_at", { ascending: false }).limit(50),
     ]);
 
     return {
@@ -67,6 +68,7 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
       posts: posts.data ?? [],
       activity: activity.data ?? [],
       failures: failures.data ?? [],
+      audit: audit.data ?? [],
     };
   });
 
