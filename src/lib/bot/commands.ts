@@ -2501,6 +2501,183 @@ register("shortenerbtn", {
 });
 
 
+// ---------------- Discovery (public) ----------------
+register("random", {
+  help: "/random — get a random published post",
+  handler: async ({ db }) => {
+    const { getBotUsername } = await import("./telegram");
+    const { randomPost } = await import("./discovery");
+    return randomPost(db, await getBotUsername());
+  },
+});
+
+register("recent", {
+  help: "/recent — 10 most recently published posts",
+  handler: async ({ db }) => {
+    const { getBotUsername } = await import("./telegram");
+    const { recentPosts } = await import("./discovery");
+    return recentPosts(db, await getBotUsername(), 10);
+  },
+});
+
+register("trending", {
+  help: "/trending — most fetched posts in the last 7 days",
+  handler: async ({ db }) => {
+    const { getBotUsername } = await import("./telegram");
+    const { trendingPosts } = await import("./discovery");
+    return trendingPosts(db, await getBotUsername(), 10);
+  },
+});
+
+register("similar", {
+  help: "/similar &lt;#tag&gt; — find posts matching a tag (only from published posts)",
+  handler: async ({ db, rawText }) => {
+    const { getBotUsername } = await import("./telegram");
+    const { similarPosts } = await import("./discovery");
+    return similarPosts(db, await getBotUsername(), rawText, 15);
+  },
+});
+
+register("leaderboard", {
+  help: "/leaderboard — top savers by fetches in the last 30 days",
+  handler: async ({ db }) => {
+    const { leaderboard } = await import("./discovery");
+    return leaderboard(db, 10);
+  },
+});
+
+// ---------------- Scheduling (admin) ----------------
+register("postlater", {
+  help: "/postlater &lt;duration&gt; [code] — schedule a post. Duration like <code>5h 2m</code>, <code>10m</code>, <code>2d</code>. Reply to media without a code to schedule that media as a one-shot.",
+  adminOnly: true,
+  handler: async ({ db, user, args, message }) => {
+    const { parseDurationMs, formatDurationMs, schedulePostByCode, scheduleOneshotFromMessage } = await import("./scheduling");
+
+    // Duration tokens continue until we hit something that isn't a duration piece.
+    let i = 0;
+    const durParts: string[] = [];
+    while (i < args.length && /^\d+[smhd]$/i.test(args[i])) {
+      durParts.push(args[i]);
+      i++;
+    }
+    const durStr = durParts.join(" ");
+    const rest = args.slice(i);
+
+    const ms = parseDurationMs(durStr);
+    if (!ms) return "Usage: <code>/postlater 5h 2m &lt;code&gt;</code> or reply to media with <code>/postlater 10m</code>";
+    const when = new Date(Date.now() + ms);
+
+    const reply = message?.reply_to_message;
+    if (rest.length) {
+      const code = rest[0];
+      const { data: post } = await db.from("posts").select("code").eq("code", code).maybeSingle();
+      if (!post) return `❌ No post found with code <code>${escapeHtml(code)}</code>.`;
+      const { id } = await schedulePostByCode(db, when, code, user.id);
+      await logAction(db, user, "schedule_post", { id, code, when: when.toISOString() });
+      return `🗓 Scheduled <code>${escapeHtml(code)}</code> in <b>${formatDurationMs(ms)}</b> (${when.toLocaleString()}). Cancel with <code>/postlaterlist</code> then <code>/postlatercancel ${id}</code>.`;
+    }
+
+    if (!reply) return "Reply to a media message with <code>/postlater 10m</code> to schedule a one-shot, or add a post code: <code>/postlater 10m &lt;code&gt;</code>.";
+    const r = await scheduleOneshotFromMessage(db, when, reply, user.id);
+    if (!r) return "❌ The replied message has no media I can schedule.";
+    await logAction(db, user, "schedule_post_oneshot", { id: r.id, when: when.toISOString() });
+    return `🗓 One-shot scheduled in <b>${formatDurationMs(ms)}</b> (${when.toLocaleString()}). Will post to all main channels.`;
+  },
+});
+
+register("postlaterlist", {
+  help: "/postlaterlist — list scheduled posts",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { listPendingScheduled } = await import("./scheduling");
+    const rows = await listPendingScheduled(db, 30);
+    if (!rows.length) return "No scheduled posts.";
+    const lines = rows.map((r) => {
+      const when = new Date(r.scheduled_for).toLocaleString();
+      const label = r.kind === "code" ? `<code>${escapeHtml(r.post_code ?? "?")}</code>` : "one-shot";
+      return `#${r.id} · ${when} · ${label}`;
+    });
+    return [`<b>🗓 Scheduled posts</b>`, "", ...lines, "", "Cancel: <code>/postlatercancel &lt;id&gt;</code>"].join("\n");
+  },
+});
+
+register("postlatercancel", {
+  help: "/postlatercancel &lt;id&gt; — cancel a scheduled post",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const id = Number(args[0]);
+    if (!id) return "Usage: /postlatercancel &lt;id&gt;";
+    const { cancelScheduled } = await import("./scheduling");
+    const ok = await cancelScheduled(db, id);
+    if (!ok) return `❌ No pending scheduled post with id ${id}.`;
+    await logAction(db, user, "schedule_post_cancel", { id });
+    return `🗑 Scheduled post #${id} cancelled.`;
+  },
+});
+
+register("broadcastlater", {
+  help: "/broadcastlater &lt;duration&gt; &lt;text&gt; — schedule a broadcast for later. Duration like <code>5h</code>, <code>2d</code>. Reply to a message with only the duration to forward it later.",
+  adminOnly: true,
+  handler: async ({ db, user, chatId, rawHtml, args, message }) => {
+    const { parseDurationMs, formatDurationMs } = await import("./scheduling");
+
+    let i = 0;
+    const durParts: string[] = [];
+    while (i < args.length && /^\d+[smhd]$/i.test(args[i])) {
+      durParts.push(args[i]);
+      i++;
+    }
+    const durStr = durParts.join(" ");
+    const ms = parseDurationMs(durStr);
+    if (!ms) return "Usage: <code>/broadcastlater 5h &lt;message&gt;</code> or reply to a message with <code>/broadcastlater 5h</code>.";
+
+    // Strip the command and duration tokens from rawHtml to get the message body.
+    const durEscaped = durParts.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+    const pattern = new RegExp(`^\\s*\\/broadcastlater(?:@\\S+)?\\s*${durEscaped}\\s*`, "i");
+    const text = rawHtml.replace(pattern, "").trim();
+    const reply = message?.reply_to_message;
+    if (!text && !reply) return "Provide either message text or reply to a message.";
+
+    const when = new Date(Date.now() + ms);
+    const { data: job, error } = await db
+      .from("broadcast_jobs")
+      .insert({
+        mode: reply ? "forward" : "text",
+        payload_text: reply ? null : text,
+        source_chat_id: reply ? chatId : null,
+        source_message_id: reply ? reply.message_id : null,
+        initiator_chat_id: chatId,
+        initiator_user_id: user.id,
+        initiator_username: user.username ?? null,
+        status: "scheduled",
+        scheduled_for: when.toISOString(),
+      })
+      .select("id")
+      .single();
+    if (error || !job) return `❌ Failed to schedule broadcast: ${error?.message ?? "unknown"}`;
+    await logAction(db, user, "broadcast_scheduled", { job_id: job.id, when: when.toISOString(), mode: reply ? "forward" : "text" });
+    return `🗓 Broadcast #${job.id} scheduled in <b>${formatDurationMs(ms)}</b> (${when.toLocaleString()}). It'll auto-start on the next cron tick after that time.`;
+  },
+});
+
+// ---------------- Export (admin) ----------------
+register("exportusers", {
+  help: "/exportusers — download a CSV of every bot user",
+  adminOnly: true,
+  handler: async ({ db, chatId }) => {
+    const { buildUsersCsv, sendCsvDocument } = await import("./export");
+    try {
+      const csv = await buildUsersCsv(db);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      await sendCsvDocument(chatId, `bot_users-${stamp}.csv`, csv, `👥 Users export`);
+      return "";
+    } catch (e: any) {
+      return `❌ Export failed: ${escapeHtml(e?.message ?? "unknown")}`;
+    }
+  },
+});
+
+
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
   const def = commands.get(commandName.toLowerCase());
   if (!def) return null;
