@@ -184,7 +184,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
               const sent: any = await sendMessage(ctx.chatId, c);
               if (sent?.message_id) sentIds.push(sent.message_id);
             }
-            if (cmdAutodel > 0) {
+            // Admins are exempt — their commands/replies are never auto-deleted.
+            if (cmdAutodel > 0 && !ctx.isAdmin) {
               const ids = [...sentIds];
               if (message?.message_id) ids.push(message.message_id);
               try {
