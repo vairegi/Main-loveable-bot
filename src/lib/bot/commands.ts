@@ -2680,12 +2680,13 @@ register("similar", {
 });
 
 register("leaderboard", {
-  help: "/leaderboard — top savers by fetches in the last 30 days",
-  handler: async ({ db }) => {
+  help: "/leaderboard — top 10 savers in the last 30 days + your own rank",
+  handler: async ({ db, user }) => {
     const { leaderboard } = await import("./discovery");
-    return leaderboard(db, 10);
+    return leaderboard(db, 10, user.id);
   },
 });
+
 
 // ---------------- Scheduling (admin) ----------------
 register("postlater", {
