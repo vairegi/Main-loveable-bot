@@ -141,6 +141,12 @@ export async function requireVerification(
       sh_pending_code: code,
     })
     .eq("telegram_user_id", userChatId);
+  // Log for shortener conversion-rate stats.
+  await db.from("activity_log").insert({
+    actor_id: userChatId,
+    action: "shortener_issued",
+    details: { code },
+  });
 
   const verifyUrl = `${webBase}/v/${token}`;
   const shortUrl = await shortenUrl(cfg.api, verifyUrl);
