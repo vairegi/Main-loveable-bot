@@ -229,18 +229,37 @@ register("start", {
 register("help", {
   help: "/help — list commands you can use",
   handler: async ({ isAdmin, isSuperAdmin }) => {
-    const { commandsVisibleTo, COMMANDS_DOCS_URL } = await import("./command-catalog");
+    const { commandsVisibleTo } = await import("./command-catalog");
     const role = isSuperAdmin ? "super" : isAdmin ? "admin" : "user";
     const cats = commandsVisibleTo(role);
 
-    const lines: string[] = ["<b>📖 Commands</b>"];
+    // Admins keep the compact one-line-per-category index.
+    if (isAdmin || isSuperAdmin) {
+      const lines: string[] = ["<b>📖 Commands</b>"];
+      for (const cat of cats) {
+        lines.push("", `<b>${cat.emoji} ${cat.title}</b>`);
+        lines.push(
+          cat.commands
+            .map((c) => (c.syntax ? `/${c.name} ${escapeHtml(c.syntax)}` : `/${c.name}`))
+            .join(" • "),
+        );
+      }
+      return lines.join("\n");
+    }
+
+    // Users get a readable card: one command per line with its description.
+    const lines: string[] = ["<b>📖 Commands</b>", "<i>Tap a command to run it.</i>"];
     for (const cat of cats) {
-      lines.push("", `<b>${cat.emoji} ${cat.title}</b>`);
-      lines.push(cat.commands.map((c) => c.syntax ? `/${c.name} ${escapeHtml(c.syntax)}` : `/${c.name}`).join(" • "));
+      lines.push("", `<b>${cat.emoji} ${cat.title}</b>`, "━━━━━━━━━━━━━━");
+      for (const c of cat.commands) {
+        const cmd = c.syntax ? `/${c.name} ${escapeHtml(c.syntax)}` : `/${c.name}`;
+        lines.push(`<b>${cmd}</b>\n   ↳ ${escapeHtml(c.description)}`);
+      }
     }
 
     return lines.join("\n");
   },
+
 });
 
 register("commands", {
