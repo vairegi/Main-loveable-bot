@@ -38,6 +38,21 @@ export async function setAutodeleteSeconds(db: SupabaseClient, seconds: number):
   });
 }
 
+export async function getCommandAutodeleteSeconds(db: SupabaseClient): Promise<number> {
+  const { data } = await db.from("bot_settings").select("value").eq("key", "command_autodelete_seconds").maybeSingle();
+  const v = (data?.value as { seconds?: number } | null)?.seconds;
+  if (v === undefined || v === null) return 120; // default 2 minutes
+  return Number.isFinite(v) && (v as number) >= 0 ? (v as number) : 120;
+}
+
+export async function setCommandAutodeleteSeconds(db: SupabaseClient, seconds: number): Promise<void> {
+  await db.from("bot_settings").upsert({
+    key: "command_autodelete_seconds",
+    value: { seconds },
+    updated_at: new Date().toISOString(),
+  });
+}
+
 export async function queueDeletion(
   db: SupabaseClient,
   chatId: number | string,

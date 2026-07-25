@@ -158,23 +158,40 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         try {
           const reply = await dispatchCommand(ctx, cmdName);
           if (reply) {
+            const { getCommandAutodeleteSeconds, queueDeletion } = await import("@/lib/bot/autodelete");
+            const cmdAutodel = await getCommandAutodeleteSeconds(db);
+            const sentIds: number[] = [];
             // Telegram caps sendMessage text at 4096 chars. Split on newlines
             // so long replies (e.g. /help) don't 400 with "message is too long".
             const LIMIT = 3800;
+            const chunks: string[] = [];
             if (reply.length <= LIMIT) {
-              await sendMessage(ctx.chatId, reply);
+              chunks.push(reply);
             } else {
               const lines = reply.split("\n");
               let buf = "";
               for (const ln of lines) {
                 if (buf.length + ln.length + 1 > LIMIT) {
-                  if (buf) await sendMessage(ctx.chatId, buf);
+                  if (buf) chunks.push(buf);
                   buf = ln;
                 } else {
                   buf = buf ? buf + "\n" + ln : ln;
                 }
               }
-              if (buf) await sendMessage(ctx.chatId, buf);
+              if (buf) chunks.push(buf);
+            }
+            for (const c of chunks) {
+              const sent: any = await sendMessage(ctx.chatId, c);
+              if (sent?.message_id) sentIds.push(sent.message_id);
+            }
+            if (cmdAutodel > 0) {
+              const ids = [...sentIds];
+              if (message?.message_id) ids.push(message.message_id);
+              try {
+                await queueDeletion(db, ctx.chatId, ids, cmdAutodel);
+              } catch (e) {
+                console.error("queueDeletion (command) failed:", e);
+              }
             }
           }
         } catch (e: any) {

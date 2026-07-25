@@ -162,6 +162,13 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
         details: "Examples: 12h, 30m, 2d. Use /autodelete off to disable.",
       },
       {
+        name: "cmdautodelete",
+        role: "admin",
+        syntax: "<duration>",
+        description: "Auto-delete command replies (e.g. /leaderboard, /favs) and the user's command after a delay.",
+        details: "Examples: 30s, 2m, 1h. Use /cmdautodelete off to disable. Default: 2m.",
+      },
+      {
         name: "fsub",
         role: "admin",
         syntax: "<chat_id> <invite_link>",
