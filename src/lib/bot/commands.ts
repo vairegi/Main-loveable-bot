@@ -1487,9 +1487,9 @@ register("fsublist", {
         } catch { /* ignore */ }
       }
       const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const name = title ? esc(title) : "(unknown)";
-      const link = c.invite_link ? esc(c.invite_link) : "(no link)";
-      return `• <b>${name}</b>\n   <code>${c.chat_id}</code>\n   ${link}`;
+      const name = title ? esc(title) : `Channel ${c.chat_id}`;
+      const label = c.invite_link ? `<a href="${esc(c.invite_link)}">${name}</a>` : `<b>${name}</b>`;
+      return `• ${label} <code>${c.chat_id}</code>`;
     }));
     return ["<b>🔒 Forced-subscription channels</b>", ...lines].join("\n");
   },
