@@ -219,3 +219,18 @@ function FailuresTable({ rows }: { rows: any[] }) {
     />
   );
 }
+
+function AuditTable({ rows }: { rows: any[] }) {
+  return (
+    <Table
+      headers={["When", "Admin", "Action", "Target", "Details"]}
+      rows={rows.map((r) => [
+        fmtTime(r.created_at),
+        r.admin_username ? `@${r.admin_username}` : String(r.admin_id ?? "—"),
+        r.action,
+        r.target ?? "—",
+        r.details ? JSON.stringify(r.details).slice(0, 200) : "—",
+      ])}
+    />
+  );
+}
