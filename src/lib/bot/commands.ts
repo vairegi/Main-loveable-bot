@@ -985,7 +985,7 @@ register("listbackup", {
   handler: async ({ db }) => {
     const { data } = await db
       .from("channels")
-      .select("telegram_chat_id, title, created_at")
+      .select("telegram_chat_id, title, invite_link, created_at")
       .eq("role", "backup")
       .order("created_at");
     if (!data?.length) return "No backup channels registered. Use /addbackup &lt;chat_id&gt;.";
@@ -995,7 +995,11 @@ register("listbackup", {
         .from("backup_copies")
         .select("*", { count: "exact", head: true })
         .eq("backup_chat_id", c.telegram_chat_id);
-      lines.push(`• <code>${c.telegram_chat_id}</code> ${c.title ?? ""} — ${count ?? 0} mirrored`);
+      const title = c.title ? escapeHtml(String(c.title)) : `Channel ${c.telegram_chat_id}`;
+      const label = c.invite_link
+        ? `<a href="${escapeHtml(c.invite_link)}">${title}</a>`
+        : title;
+      lines.push(`• ${label} <code>${c.telegram_chat_id}</code> — ${count ?? 0} mirrored`);
     }
     return lines.join("\n");
   },
