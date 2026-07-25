@@ -2595,7 +2595,7 @@ register("similar", {
     if (!tag) return "Usage: <code>/similar #tag</code> or <code>/similar tag</code>";
     const rendered = await similarPostsPage(db, await getBotUsername(), tag, 0);
     if (!rendered) return `No posted files match <b>${escapeHtml(tag)}</b>.`;
-    const kb = similarKeyboard(tag, 0, false, rendered.hasNext);
+    const kb = similarKeyboard(tag, 0, false, rendered.hasNext, Date.now());
     await sendMessage(chatId, rendered.text, {
       reply_markup: kb,
       disable_web_page_preview: true,
