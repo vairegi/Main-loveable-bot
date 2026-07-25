@@ -15,7 +15,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminPage,
 });
 
-type Tab = "activity" | "users" | "posts" | "failures";
+type Tab = "activity" | "users" | "posts" | "failures" | "audit";
 
 function AdminPage() {
   const navigate = useNavigate();
@@ -101,7 +101,7 @@ function AdminPage() {
           </button>
         </div>
         <nav className="mx-auto flex max-w-6xl gap-1 px-4">
-          {(["activity", "users", "posts", "failures"] as Tab[]).map((t) => (
+          {(["activity", "users", "posts", "failures", "audit"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -126,6 +126,7 @@ function AdminPage() {
             {tab === "users" && <UsersTable rows={data.users} />}
             {tab === "posts" && <PostsTable rows={data.posts} />}
             {tab === "failures" && <FailuresTable rows={data.failures} />}
+            {tab === "audit" && <AuditTable rows={(data as any).audit ?? []} />}
           </>
         )}
       </main>
@@ -214,6 +215,21 @@ function FailuresTable({ rows }: { rows: any[] }) {
         r.attempts,
         (r.last_error ?? "").slice(0, 120),
         fmtTime(r.updated_at),
+      ])}
+    />
+  );
+}
+
+function AuditTable({ rows }: { rows: any[] }) {
+  return (
+    <Table
+      headers={["When", "Admin", "Action", "Target", "Details"]}
+      rows={rows.map((r) => [
+        fmtTime(r.created_at),
+        r.admin_username ? `@${r.admin_username}` : String(r.admin_id ?? "—"),
+        r.action,
+        r.target ?? "—",
+        r.details ? JSON.stringify(r.details).slice(0, 200) : "—",
       ])}
     />
   );

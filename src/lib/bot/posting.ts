@@ -417,6 +417,14 @@ async function publishPost(db: SupabaseClient, post: any, targetChatId?: number 
       main_message_id: mainMessage.message_id,
     });
   }
+
+  // Notify tag subscribers (best-effort, silent on error).
+  try {
+    const { notifyTagSubscribers } = await import("./engagement");
+    await notifyTagSubscribers(db, { code: post.code, caption: post.caption ?? null }, botUsername);
+  } catch (e) {
+    console.error("notifyTagSubscribers failed:", e);
+  }
 }
 
 // -------- Deliver file to a user who clicked the deep-link --------
@@ -455,8 +463,12 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
     return "";
   }
 
-  // Link-shortener verification gate (no-op when disabled).
-  {
+  // Referral bonus: if the user has bonus files, consume one and skip the shortener.
+  const { consumeBonusFile } = await import("./engagement");
+  const usedBonus = await consumeBonusFile(db, userChatId);
+
+  // Link-shortener verification gate (no-op when disabled or when a bonus was used).
+  if (!usedBonus) {
     const { requireVerification } = await import("./shortener");
     if (await requireVerification(db, userChatId, code)) return "";
   }
@@ -528,25 +540,40 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
       console.error("reaction keyboard failed:", e);
     }
 
-    // Bookkeeping: bump per-post + per-user fetch counters (best-effort).
+    // Related posts (2x2 grid) — same-hashtag recent posts.
+    try {
+      const { findRelatedPosts, buildRelatedKeyboard } = await import("./related");
+      const related = await findRelatedPosts(db, { id: post.id, caption: post.caption });
+      const botUsername = await getBotUsername();
+      const relKb = buildRelatedKeyboard(related, botUsername);
+      if (relKb) {
+        await sendMessage(userChatId, `🔎 <i>Related</i>`, { reply_markup: relKb, disable_web_page_preview: true });
+      }
+    } catch (e) {
+      console.error("related keyboard failed:", e);
+    }
+
+    // Bookkeeping: bump per-post + per-user fetch counters, streak (best-effort).
     try {
       await db.from("posts").update({ fetch_count: (post.fetch_count ?? 0) + 1 }).eq("id", post.id);
       const { data: cur } = await db.from("bot_users").select("fetch_count").eq("telegram_user_id", userChatId).maybeSingle();
       await db.from("bot_users").update({ fetch_count: (cur?.fetch_count ?? 0) + 1 }).eq("telegram_user_id", userChatId);
-      // Log the fetch so /trending, /leaderboard, and shortener-conversion stats
-      // have historical data (last 7/30d etc.).
       await db.from("activity_log").insert({
         actor_id: userChatId,
         action: "file_fetch",
         details: { code, post_id: post.id },
       });
+      const { bumpStreak } = await import("./engagement");
+      await bumpStreak(db, userChatId);
     } catch { /* ignore */ }
 
-    // Bump shortener file counter (no-op when disabled).
-    try {
-      const { bumpFilesUsed } = await import("./shortener");
-      await bumpFilesUsed(db, userChatId);
-    } catch { /* ignore */ }
+    // Bump shortener file counter — unless a referral bonus paid for this fetch.
+    if (!usedBonus) {
+      try {
+        const { bumpFilesUsed } = await import("./shortener");
+        await bumpFilesUsed(db, userChatId);
+      } catch { /* ignore */ }
+    }
 
     return "";
   } catch (e: any) {

@@ -41,6 +41,36 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_audit: {
+        Row: {
+          action: string
+          admin_id: number
+          admin_username: string | null
+          created_at: string
+          details: Json | null
+          id: number
+          target: string | null
+        }
+        Insert: {
+          action: string
+          admin_id: number
+          admin_username?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: number
+          target?: string | null
+        }
+        Update: {
+          action?: string
+          admin_id?: number
+          admin_username?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: number
+          target?: string | null
+        }
+        Relationships: []
+      }
       admins: {
         Row: {
           added_by: number | null
@@ -532,6 +562,45 @@ export type Database = {
         }
         Relationships: []
       }
+      referral_bonuses: {
+        Row: {
+          bonus_files_remaining: number
+          total_earned: number
+          updated_at: string
+          user_id: number
+        }
+        Insert: {
+          bonus_files_remaining?: number
+          total_earned?: number
+          updated_at?: string
+          user_id: number
+        }
+        Update: {
+          bonus_files_remaining?: number
+          total_earned?: number
+          updated_at?: string
+          user_id?: number
+        }
+        Relationships: []
+      }
+      referrals: {
+        Row: {
+          created_at: string
+          referee_id: number
+          referrer_id: number
+        }
+        Insert: {
+          created_at?: string
+          referee_id: number
+          referrer_id: number
+        }
+        Update: {
+          created_at?: string
+          referee_id?: number
+          referrer_id?: number
+        }
+        Relationships: []
+      }
       scheduled_posts: {
         Row: {
           caption: string | null
@@ -606,6 +675,24 @@ export type Database = {
           message_id?: number
           query?: string
           selected?: Json
+          user_id?: number
+        }
+        Relationships: []
+      }
+      tag_subscriptions: {
+        Row: {
+          created_at: string
+          tag: string
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          tag: string
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          tag?: string
           user_id?: number
         }
         Relationships: []
@@ -691,6 +778,54 @@ export type Database = {
         }
         Relationships: []
       }
+      user_streaks: {
+        Row: {
+          current_streak: number
+          last_fetch_day: string | null
+          longest_streak: number
+          updated_at: string
+          user_id: number
+        }
+        Insert: {
+          current_streak?: number
+          last_fetch_day?: string | null
+          longest_streak?: number
+          updated_at?: string
+          user_id: number
+        }
+        Update: {
+          current_streak?: number
+          last_fetch_day?: string | null
+          longest_streak?: number
+          updated_at?: string
+          user_id?: number
+        }
+        Relationships: []
+      }
+      warnings: {
+        Row: {
+          admin_id: number
+          created_at: string
+          id: number
+          reason: string | null
+          user_id: number
+        }
+        Insert: {
+          admin_id: number
+          created_at?: string
+          id?: number
+          reason?: string | null
+          user_id: number
+        }
+        Update: {
+          admin_id?: number
+          created_at?: string
+          id?: number
+          reason?: string | null
+          user_id?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -752,6 +887,8 @@ export type Database = {
         Returns: boolean
       }
       is_telegram_bot_request: { Args: never; Returns: boolean }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       app_role: "admin" | "user"

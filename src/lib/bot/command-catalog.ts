@@ -39,6 +39,11 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "whoami", role: "user", description: "Show your Telegram ID and role." },
       { name: "favs", role: "user", description: "List posts you've saved with ❤️." },
       { name: "rfavs", role: "user", syntax: "<n> [n...]", description: "Remove favorites by number from /favs (e.g. /rfavs 1 or /rfavs 1-5). Also accepts codes or t.me links." },
+      { name: "mystats", role: "user", description: "Your fetches, favorites, streak, and referral summary." },
+      { name: "streak", role: "user", description: "Current and longest daily-fetch streak." },
+      { name: "referral", role: "user", description: "Get your invite link and bonus-file balance." },
+      { name: "notify", role: "user", syntax: "<#tag>", description: "Subscribe to DM alerts when a new post with that hashtag is published." },
+      { name: "unnotify", role: "user", syntax: "<#tag|all>", description: "Unsubscribe from a tag (or all tags)." },
     ],
   },
   {
@@ -215,8 +220,12 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "unban", role: "admin", syntax: "<user_id>", description: "Remove ban." },
       { name: "banlist", role: "admin", description: "Show banned users." },
       { name: "unbanall", role: "admin", description: "Unban every banned user." },
-      
-      
+      { name: "warn", role: "admin", syntax: "<user_id> [reason]", description: `Warn a user. Reaching 3 warnings auto-bans them.` },
+      { name: "warns", role: "admin", syntax: "<user_id>", description: "Show a user's warning history." },
+      { name: "unwarn", role: "admin", syntax: "<user_id>", description: "Clear all warnings for a user." },
+      { name: "health", role: "admin", description: "Live health snapshot: queues, cron ages, failures." },
+      { name: "audit", role: "admin", syntax: "[n]", description: "Show the latest admin audit entries (default 20, max 100)." },
+
       { name: "favsall", role: "admin", description: "Top savers ranked by total saves." },
       { name: "favsrecent", role: "admin", description: "Show recent favorites across all users." },
       { name: "whosaved", role: "admin", syntax: "<code>", description: "List users who saved a specific post." },
