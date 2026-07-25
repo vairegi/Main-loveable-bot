@@ -9,7 +9,7 @@ function csvEscape(v: unknown): string {
 }
 
 export async function buildUsersCsv(db: SupabaseClient): Promise<string> {
-  const columns = ["telegram_user_id", "username", "first_name", "fetch_count", "last_seen", "banned", "banned_reason", "created_at"];
+  const columns = ["telegram_user_id", "username", "first_name", "fetch_count", "last_seen", "banned", "banned_reason", "first_seen"];
   const rows: string[] = [columns.join(",")];
   let offset = 0;
   const pageSize = 1000;
