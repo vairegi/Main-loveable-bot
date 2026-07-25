@@ -209,7 +209,7 @@ export async function handleVerifyDeepLink(
   const { data: bu } = await db
     .from("bot_users")
     .select(
-      "telegram_id, username, sh_pending_token, sh_pending_issued_at, sh_pending_verified_at, sh_pending_code, sh_bypass_count",
+      "telegram_user_id, username, sh_pending_token, sh_pending_issued_at, sh_pending_verified_at, sh_pending_code, sh_bypass_count",
     )
     .eq("telegram_user_id", userChatId)
     .maybeSingle();

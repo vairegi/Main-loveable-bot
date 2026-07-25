@@ -535,6 +535,12 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
       await db.from("bot_users").update({ fetch_count: (cur?.fetch_count ?? 0) + 1 }).eq("telegram_user_id", userChatId);
     } catch { /* ignore */ }
 
+    // Bump shortener file counter (no-op when disabled).
+    try {
+      const { bumpFilesUsed } = await import("./shortener");
+      await bumpFilesUsed(db, userChatId);
+    } catch { /* ignore */ }
+
     return "";
   } catch (e: any) {
     console.error("Deliver failed:", e);
