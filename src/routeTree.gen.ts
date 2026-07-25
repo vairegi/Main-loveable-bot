@@ -24,6 +24,7 @@ import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicTelegramImportRouteImport } from './routes/api/public/telegram/import'
+import { Route as ApiPublicHooksLeaderboardBroadcastRouteImport } from './routes/api/public/hooks/leaderboard-broadcast'
 import { Route as ApiPublicHooksDripRouteImport } from './routes/api/public/hooks/drip'
 import { Route as ApiPublicHooksDbExportRouteImport } from './routes/api/public/hooks/db-export'
 import { Route as ApiPublicHooksBroadcastRouteImport } from './routes/api/public/hooks/broadcast'
@@ -108,6 +109,12 @@ const ApiPublicTelegramImportRoute = ApiPublicTelegramImportRouteImport.update({
   path: '/api/public/telegram/import',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksLeaderboardBroadcastRoute =
+  ApiPublicHooksLeaderboardBroadcastRouteImport.update({
+    id: '/api/public/hooks/leaderboard-broadcast',
+    path: '/api/public/hooks/leaderboard-broadcast',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksDripRoute = ApiPublicHooksDripRouteImport.update({
   id: '/api/public/hooks/drip',
   path: '/api/public/hooks/drip',
@@ -154,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/broadcast': typeof ApiPublicHooksBroadcastRoute
   '/api/public/hooks/db-export': typeof ApiPublicHooksDbExportRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
+  '/api/public/hooks/leaderboard-broadcast': typeof ApiPublicHooksLeaderboardBroadcastRoute
   '/api/public/telegram/import': typeof ApiPublicTelegramImportRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
@@ -175,6 +183,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/broadcast': typeof ApiPublicHooksBroadcastRoute
   '/api/public/hooks/db-export': typeof ApiPublicHooksDbExportRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
+  '/api/public/hooks/leaderboard-broadcast': typeof ApiPublicHooksLeaderboardBroadcastRoute
   '/api/public/telegram/import': typeof ApiPublicTelegramImportRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
@@ -198,6 +207,7 @@ export interface FileRoutesById {
   '/api/public/hooks/broadcast': typeof ApiPublicHooksBroadcastRoute
   '/api/public/hooks/db-export': typeof ApiPublicHooksDbExportRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
+  '/api/public/hooks/leaderboard-broadcast': typeof ApiPublicHooksLeaderboardBroadcastRoute
   '/api/public/telegram/import': typeof ApiPublicTelegramImportRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
@@ -221,6 +231,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/broadcast'
     | '/api/public/hooks/db-export'
     | '/api/public/hooks/drip'
+    | '/api/public/hooks/leaderboard-broadcast'
     | '/api/public/telegram/import'
     | '/api/public/telegram/webhook'
   fileRoutesByTo: FileRoutesByTo
@@ -242,6 +253,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/broadcast'
     | '/api/public/hooks/db-export'
     | '/api/public/hooks/drip'
+    | '/api/public/hooks/leaderboard-broadcast'
     | '/api/public/telegram/import'
     | '/api/public/telegram/webhook'
   id:
@@ -264,6 +276,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/broadcast'
     | '/api/public/hooks/db-export'
     | '/api/public/hooks/drip'
+    | '/api/public/hooks/leaderboard-broadcast'
     | '/api/public/telegram/import'
     | '/api/public/telegram/webhook'
   fileRoutesById: FileRoutesById
@@ -286,6 +299,7 @@ export interface RootRouteChildren {
   ApiPublicHooksBroadcastRoute: typeof ApiPublicHooksBroadcastRoute
   ApiPublicHooksDbExportRoute: typeof ApiPublicHooksDbExportRoute
   ApiPublicHooksDripRoute: typeof ApiPublicHooksDripRoute
+  ApiPublicHooksLeaderboardBroadcastRoute: typeof ApiPublicHooksLeaderboardBroadcastRoute
   ApiPublicTelegramImportRoute: typeof ApiPublicTelegramImportRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
 }
@@ -397,6 +411,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTelegramImportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/leaderboard-broadcast': {
+      id: '/api/public/hooks/leaderboard-broadcast'
+      path: '/api/public/hooks/leaderboard-broadcast'
+      fullPath: '/api/public/hooks/leaderboard-broadcast'
+      preLoaderRoute: typeof ApiPublicHooksLeaderboardBroadcastRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/drip': {
       id: '/api/public/hooks/drip'
       path: '/api/public/hooks/drip'
@@ -465,6 +486,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksBroadcastRoute: ApiPublicHooksBroadcastRoute,
   ApiPublicHooksDbExportRoute: ApiPublicHooksDbExportRoute,
   ApiPublicHooksDripRoute: ApiPublicHooksDripRoute,
+  ApiPublicHooksLeaderboardBroadcastRoute:
+    ApiPublicHooksLeaderboardBroadcastRoute,
   ApiPublicTelegramImportRoute: ApiPublicTelegramImportRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
 }
