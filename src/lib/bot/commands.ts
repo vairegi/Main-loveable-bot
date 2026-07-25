@@ -3139,7 +3139,40 @@ register("audit", {
   },
 });
 
+register("setmenu", {
+  help: "/setmenu — register the blue Menu button command list with Telegram",
+  adminOnly: true,
+  handler: async ({ chatId }) => {
+    const { COMMAND_CATEGORIES } = await import("./command-catalog");
+    const all = COMMAND_CATEGORIES.flatMap((c) => c.commands);
+    const toApi = (list: typeof all) =>
+      list.slice(0, 100).map((c) => ({
+        command: c.name,
+        description: (c.description || c.name).slice(0, 256),
+      }));
+
+    const userCmds = toApi(all.filter((c) => c.role === "user"));
+    const adminCmds = toApi(all);
+
+    // Everyone in private chats sees user commands…
+    await tg("setMyCommands", { commands: userCmds, scope: { type: "all_private_chats" } });
+    // …and this admin chat sees the full list.
+    await tg("setMyCommands", { commands: adminCmds, scope: { type: "chat", chat_id: chatId } });
+    // Make the Menu button show that command list.
+    await tg("setChatMenuButton", { menu_button: { type: "commands" } });
+
+    return [
+      "✅ <b>Menu button configured</b>",
+      `Public commands: <b>${userCmds.length}</b>`,
+      `This chat (admin): <b>${adminCmds.length}</b>`,
+      "",
+      "Reopen the chat if the Menu button doesn't appear right away.",
+    ].join("\n");
+  },
+});
+
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
+
   const def = commands.get(commandName.toLowerCase());
   if (!def) return null;
   if (def.superOnly && !ctx.isSuperAdmin) return "🚫 This command is for the super-admin only.";

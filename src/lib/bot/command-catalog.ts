@@ -241,6 +241,7 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
     commands: [
       { name: "linkweb", role: "admin", description: "Get a one-time link to sign into the admin web page." },
       { name: "setweburl", role: "super", syntax: "<url>", description: "Set the base URL used by /linkweb." },
+      { name: "setmenu", role: "admin", description: "Register the blue Menu button command list with Telegram." },
     ],
   },
 ];
