@@ -1,71 +1,60 @@
-# Plan — new bot features
+# Plan — engagement, related posts, health, audit, warn
 
-Big batch. Before I build, a few clarifications inline (marked ❓) so we don't ship the wrong thing.
+Big batch. A few ❓ inline — reply "go" to build with defaults, or override.
 
-## 1. Discovery commands (users)
+## 1. User engagement (all user-facing)
 
-Only pull from **posts that have been posted to a main channel** (i.e. exist in `post_copies`), never raw database queue.
+- **/streak** — daily fetch streak. Increments when user fetches at least 1 file in a UTC day; resets if they miss a day. Shows current streak, longest streak, and next milestone.
+- **/referral** — each user gets a unique deep link `t.me/<bot>?start=ref_<code>`. When a new user hits `/start ref_<code>`, we credit the referrer. Reward: **+5 shortener-free files per successful referral** (bumps `sh_files_used` down / grants a bonus counter). Shows: your code, invite link, total referrals, bonus files remaining.
+  - ❓ Reward = 5 free files per referral? (default yes)
+- **/notify `#tag`** — subscribe to a hashtag. When a new post is posted to a main channel whose caption contains that tag, bot DMs the subscriber with a deep link. `/notify` (no args) lists subscriptions. `/unnotify #tag` removes one. Cap 10 tags per user.
+- **/mystats** — personal card: files fetched (all-time / 7d / today), favs count, referrals, streak, rank on 30d leaderboard, join date.
 
-- **/random** — pick 1 random posted post, send as a mini card with a deep link (Get File button).
-- **/recent** — last 10 posted posts, numbered list with deep links.
-- **/trending** — top 10 posts by fetch count in the last 7 days (from `activity_log` where `action='file_fetch'`).
-- **/similar `<tag>`** — user passes a hashtag like `#incest`. We match posts whose caption contains that hashtag (case-insensitive), return top 10 most recent posted ones with deep links.
-  - ❓ If no `#` prefix given, should I auto-add one, or reject? Default: auto-add.
+New tables: `user_streaks(user_id pk, current, longest, last_fetch_day)`, `referrals(referrer_id, referee_id pk, created_at)`, `referral_bonuses(user_id pk, bonus_files_remaining)`, `tag_subscriptions(user_id, tag, created_at, pk(user_id, tag))`.
 
-## 2. /leaderboard
-Top 10 users by **files fetched** (last 30 days), with fetch counts. Admin-only? Or public to users too?
-- ❓ Default: **public to users**, shows first name + count, no usernames leaked.
+## 2. Related posts under each file
 
-## 3. Scheduled posting — /postlater
+When a user gets a file via Get File, append **"🔎 Related"** inline buttons (up to 4) under the delivered media. Related = posts sharing ≥1 hashtag with the current post's caption, most recent first, only posted-to-main-channel ones. Each button = a deep link to fetch that related file.
 
-Admin-only. Two shapes:
+- ❓ Show related on **every** delivery, or only when caption has hashtags? (default: only when hashtags exist — otherwise no buttons)
+- ❓ Count: 4 related buttons max in a 2×2 grid? (default yes)
 
-- `/postlater <duration> <code|link>` — schedule an existing DB post by code/link.
-- Reply to a media message in the bot with `/postlater <duration>` — bot ingests that media as a new DB post, then schedules it.
+No new table needed — reuses caption ilike matching from `/similar`. To make it fast on hot paths, I'll add a GIN trigram index on `posts.caption`.
 
-Duration parser: `5h`, `2m`, `10m`, `1d`, or combined `5h 2m` / `1h30m`.
+## 3. /health (admin)
 
-Storage: new `scheduled_posts` table `(id, post_id, run_at, created_by, status, created_at)`.
-Runner: piggyback the existing per-minute drip cron — before draining the drip queue, promote any `scheduled_posts` whose `run_at <= now()` into an immediate post to main channels.
+Telegram command that mirrors the existing `/api/public/health` endpoint but formatted for chat. Shows: pending_deletions (total + due), backup_failures, last_backup_age, last_post_age, drip_last_run_age, broadcast queue depth, scheduled_posts due, cron schedule sanity (drip + autodelete + broadcast + backup last run timestamps from `cron.job_run_details`). One command, one message, color-coded with ✅/⚠️/❌ per row.
 
-- ❓ Where should replied-to media be stored — as a normal DB post (so it also enters the regular drip queue for future posting) or as a **one-shot** that only fires at the scheduled time and is not queued? Default: **one-shot**, marked so drip skips it.
+## 4. Audit log (admin)
 
-## 4. /broadcastlater
-Admin-only. `/broadcastlater <duration> <text>` or reply to a message with `/broadcastlater <duration>`.
-Reuses existing `broadcast_jobs` table — adds a `scheduled_for` column and a `status='scheduled'` state. The broadcast cron promotes scheduled jobs when due.
+Separate from `activity_log` (which tracks user actions). New `admin_audit(id, admin_id, action, target, details jsonb, created_at)`. Every admin-only command that mutates state writes a row: bans, unbans, warns, /addadmin, /removeadmin, /shortener config changes, /dltbackup, /resetbackup, /undoresetbackup, /postlater, /broadcast, /broadcastlater, /cmdautodelete, /autodelete, drip config, /mpost, /dpost.
 
-## 5. /exportusers
-Admin-only. Generate CSV of `bot_users` (telegram_user_id, username, first_name, last_seen, banned, fetch_count) and upload as a document to the admin who ran it. Uses Telegram `sendDocument` with `InputFile` (multipart).
+- **/audit `[n]`** — admin command, last N audit entries (default 20, max 100), same compact 2-line format as /activity.
+- ❓ Also surface it on the web admin dashboard as a new "Audit" tab? (default yes)
 
-## 6. /stats upgrades
-Append to existing `/stats` output:
-- **Daily active users** (last 24h, distinct actors in `activity_log`)
-- **Fetches today** (count of `file_fetch` in last 24h)
-- **Shortener conversion rate** (last 7d): `verifications_completed / verifications_issued` from `bot_users` sh_* columns + `activity_log` shortener events. If we don't currently log "issued", add a lightweight counter.
+## 5. /warn
 
-## 7. Live tail of activity_log (web admin)
-On the existing `/admin` page → **Activity** tab: add realtime tail. Uses Supabase Realtime `postgres_changes` on `public.activity_log` INSERT, prepends new rows to the table live. Enable realtime for that table via migration (`ALTER PUBLICATION supabase_realtime ADD TABLE public.activity_log`).
+Admin-only. `/warn <user_id|@username> [reason]`. Sends a formal warning DM to the user ("⚠️ Warning from admins: <reason>"), increments a warn counter, and logs to audit + activity_log. 
 
-## Schema changes (one migration)
-- `scheduled_posts` table + GRANTs + RLS (service_role only; policies deny others).
-- `broadcast_jobs`: add `scheduled_for timestamptz null`.
-- `activity_log`: add to `supabase_realtime` publication + `REPLICA IDENTITY FULL` if needed.
-- Optionally: `bot_settings` counters for shortener issued/completed if not already tracked.
+- **3 warns = auto-ban** with reason "3 warnings reached".
+- **/warns `<user_id>`** — list a user's warnings.
+- **/unwarn `<user_id>`** — clear all warnings for a user.
+
+New table: `warnings(id, user_id, admin_id, reason, created_at)`.
 
 ## Files touched
-- `src/lib/bot/commands.ts` — new commands + /stats extension
-- `src/lib/bot/command-catalog.ts` — catalog entries (per project rule)
-- `src/lib/bot/discovery.ts` (new) — random/recent/trending/similar helpers
-- `src/lib/bot/scheduling.ts` (new) — postlater + broadcastlater helpers
-- `src/lib/bot/export.ts` (new) — CSV + sendDocument
-- `src/routes/api/public/hooks/drip.ts` — promote due scheduled_posts
-- `src/routes/api/public/hooks/broadcast.ts` — promote due scheduled broadcasts
-- `src/routes/_authenticated/admin.tsx` — realtime tail on Activity tab
-- one Supabase migration
 
-## Please confirm the ❓ items
-1. `/similar` without `#` → auto-add? (default yes)
-2. `/leaderboard` visible to normal users? (default yes, first name only)
-3. `/postlater` on replied media → one-shot, not queued? (default yes)
+- New: `src/lib/bot/engagement.ts` (streak/referral/notify/mystats helpers), `src/lib/bot/related.ts` (related-posts query + keyboard), `src/lib/bot/audit.ts` (writeAudit helper), `src/lib/bot/warnings.ts`.
+- `src/lib/bot/commands.ts` — register /streak /referral /notify /unnotify /mystats /health /audit /warn /warns /unwarn; call `writeAudit` inside every mutating admin command; call `bumpStreak` inside `deliverFileByCode`; attach related keyboard after delivery.
+- `src/lib/bot/command-catalog.ts` — new entries (per project rule).
+- `src/routes/api/public/telegram/webhook.ts` — handle `start=ref_<code>` in /start payload; route new callback data if related buttons use callbacks (they won't — pure deep links).
+- `src/routes/_authenticated/admin.tsx` — new "Audit" tab (if ❓4 = yes).
+- One Supabase migration for the 5 new tables + GRANTs + RLS + trigram index on `posts.caption`.
 
-Reply with any overrides, or just "go" to build with the defaults.
+## ❓ Please confirm before I build
+
+1. Referral reward = **+5 free files** per invite? (default yes)
+2. Related buttons: **only when caption has hashtags**, 2×2 grid? (default yes)
+3. Audit tab on web admin dashboard too? (default yes)
+
+Reply "go" for defaults, or override any of the three.
