@@ -74,21 +74,58 @@ export async function trendingPosts(db: SupabaseClient, botUsername: string, lim
   return [`<b>🔥 Trending — last 7 days</b>`, "", ...lines].join("\n");
 }
 
-export async function similarPosts(db: SupabaseClient, botUsername: string, rawTag: string, limit = 15): Promise<string> {
-  let tag = rawTag.trim().replace(/^\/similar\s+/i, "");
-  if (!tag) return "Usage: <code>/similar #tag</code> or <code>/similar tag</code>";
+export function normalizeSimilarTag(rawTag: string): string {
+  let tag = rawTag.trim().replace(/^\/similar(@\S+)?\s+/i, "");
+  if (!tag) return "";
   if (!tag.startsWith("#")) tag = `#${tag}`;
+  return tag;
+}
+
+export const SIMILAR_PAGE_SIZE = 15;
+
+export async function similarPostsPage(
+  db: SupabaseClient,
+  botUsername: string,
+  tag: string,
+  page = 0,
+  pageSize = SIMILAR_PAGE_SIZE,
+): Promise<{ text: string; hasPrev: boolean; hasNext: boolean; total: number } | null> {
   const pattern = `%${tag.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+  const { count } = await db
+    .from("posts")
+    .select("*", { count: "exact", head: true })
+    .not("posted_at", "is", null)
+    .ilike("caption", pattern);
+  const total = count ?? 0;
+  if (!total) return null;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const from = safePage * pageSize;
+  const to = from + pageSize - 1;
   const { data } = await db
     .from("posts")
     .select("code, caption, fetch_count")
     .not("posted_at", "is", null)
     .ilike("caption", pattern)
     .order("fetch_count", { ascending: false })
-    .limit(limit);
-  if (!data?.length) return `No posted files match <b>${esc(tag)}</b>.`;
-  const lines = data.map((p, i) => line(botUsername, i + 1, p));
-  return [`<b>🔎 Similar to ${esc(tag)}</b> — ${data.length} match${data.length === 1 ? "" : "es"}`, "", ...lines].join("\n");
+    .range(from, to);
+  const lines = (data ?? []).map((p, i) => line(botUsername, from + i + 1, p));
+  const header = `<b>🔎 Similar to ${esc(tag)}</b> — ${total} match${total === 1 ? "" : "es"}`;
+  const pageInfo = `<i>Page ${safePage + 1} / ${totalPages}</i>`;
+  return {
+    text: [header, pageInfo, "", ...lines].join("\n"),
+    hasPrev: safePage > 0,
+    hasNext: safePage < totalPages - 1,
+    total,
+  };
+}
+
+export async function similarPosts(db: SupabaseClient, botUsername: string, rawTag: string, limit = SIMILAR_PAGE_SIZE): Promise<string> {
+  const tag = normalizeSimilarTag(rawTag);
+  if (!tag) return "Usage: <code>/similar #tag</code> or <code>/similar tag</code>";
+  const rendered = await similarPostsPage(db, botUsername, tag, 0, limit);
+  if (!rendered) return `No posted files match <b>${esc(tag)}</b>.`;
+  return rendered.text;
 }
 
 export async function leaderboard(db: SupabaseClient, limit = 10): Promise<string> {
