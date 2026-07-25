@@ -28,11 +28,15 @@ export const Route = createFileRoute("/api/public/hooks/drip")({
       POST: async ({ request }) => {
         const { getAdminDb } = await import("@/lib/bot/db");
         const { computeDripDecision, commitSlotProgress, dripQueue } = await import("@/lib/bot/posting");
+        const { processDueScheduledPosts } = await import("@/lib/bot/scheduling");
         const db = getAdminDb();
+
+        // First, publish any /postlater scheduled posts whose time is now.
+        const scheduled = await processDueScheduledPosts(db, 5);
 
         const decision = await computeDripDecision(db, CHUNK_SIZE);
         if (decision.batchSize <= 0) {
-          return Response.json({ ok: true, skipped: true });
+          return Response.json({ ok: true, skipped: true, scheduled: scheduled.processed });
         }
 
         const result = await dripQueue(db, decision.batchSize);

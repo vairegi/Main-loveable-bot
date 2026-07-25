@@ -227,6 +227,7 @@ export type Database = {
           last_tick_at: string | null
           mode: string
           payload_text: string | null
+          scheduled_for: string | null
           source_chat_id: number | null
           source_message_id: number | null
           started_at: string
@@ -246,6 +247,7 @@ export type Database = {
           last_tick_at?: string | null
           mode: string
           payload_text?: string | null
+          scheduled_for?: string | null
           source_chat_id?: number | null
           source_message_id?: number | null
           started_at?: string
@@ -265,6 +267,7 @@ export type Database = {
           last_tick_at?: string | null
           mode?: string
           payload_text?: string | null
+          scheduled_for?: string | null
           source_chat_id?: number | null
           source_message_id?: number | null
           started_at?: string
@@ -526,6 +529,54 @@ export type Database = {
           posted_at?: string | null
           source_chat_id?: number
           source_message_id?: number
+        }
+        Relationships: []
+      }
+      scheduled_posts: {
+        Row: {
+          caption: string | null
+          created_at: string
+          created_by: number | null
+          id: number
+          kind: string
+          last_error: string | null
+          media: Json | null
+          post_code: string | null
+          processed_at: string | null
+          scheduled_for: string
+          status: string
+          target_chat_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          created_by?: number | null
+          id?: number
+          kind: string
+          last_error?: string | null
+          media?: Json | null
+          post_code?: string | null
+          processed_at?: string | null
+          scheduled_for: string
+          status?: string
+          target_chat_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          created_by?: number | null
+          id?: number
+          kind?: string
+          last_error?: string | null
+          media?: Json | null
+          post_code?: string | null
+          processed_at?: string | null
+          scheduled_for?: string
+          status?: string
+          target_chat_id?: number | null
+          updated_at?: string
         }
         Relationships: []
       }

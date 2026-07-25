@@ -20,7 +20,11 @@ export const Route = createFileRoute("/api/public/hooks/broadcast")({
       POST: async ({ request }) => {
         const { getAdminDb } = await import("@/lib/bot/db");
         const { sendMessage, forwardMessage } = await import("@/lib/bot/telegram");
+        const { promoteDueScheduledBroadcasts } = await import("@/lib/bot/scheduling");
         const db = getAdminDb();
+
+        // Promote any /broadcastlater jobs whose time has arrived.
+        await promoteDueScheduledBroadcasts(db);
 
         // Grab the oldest pending/running job.
         const { data: job } = await db

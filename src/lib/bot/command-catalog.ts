@@ -42,6 +42,18 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
     ],
   },
   {
+    title: "Discovery",
+    emoji: "🔎",
+    slug: "discovery",
+    commands: [
+      { name: "random", role: "user", description: "Get a random published post." },
+      { name: "recent", role: "user", description: "10 most recently published posts." },
+      { name: "trending", role: "user", description: "Most fetched posts in the last 7 days." },
+      { name: "similar", role: "user", syntax: "<#tag>", description: "Find posts matching a tag among already-published posts." },
+      { name: "leaderboard", role: "user", description: "Top savers by fetches in the last 30 days." },
+    ],
+  },
+  {
     title: "Admin management",
     emoji: "🛡️",
     slug: "admin-management",
@@ -111,6 +123,9 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "dripnow", role: "admin", syntax: "[n]", description: "Publish the next N queued posts immediately (default 1)." },
       { name: "reset", role: "admin", syntax: "[n]", description: "Put the last N posted posts back in queue (default 3, confirms)." },
       { name: "resetall", role: "admin", description: "Put every posted post back in queue (confirms)." },
+      { name: "postlater", role: "admin", syntax: "<duration> [code]", description: "Schedule a post. Duration like 5h 2m. With a code publishes that post; reply to media without a code to schedule a one-shot." },
+      { name: "postlaterlist", role: "admin", description: "List pending scheduled posts." },
+      { name: "postlatercancel", role: "admin", syntax: "<id>", description: "Cancel a scheduled post by id from /postlaterlist." },
     ],
   },
   {
@@ -186,10 +201,13 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
         description: "Send text to every user, or reply to a message with /broadcast to forward it.",
         details: "Formatting supported. Replying to a forwarded channel post preserves the original channel tag.",
       },
+      { name: "broadcastlater", role: "admin", syntax: "<duration> <text|reply>", description: "Queue a broadcast for later (e.g. 5h). Reply to a message to schedule a forward." },
+      { name: "exportusers", role: "admin", description: "Download every bot user as a CSV attachment." },
       { name: "ban", role: "admin", syntax: "<user_id> [reason]", description: "Block a user from fetching files." },
       { name: "unban", role: "admin", syntax: "<user_id>", description: "Remove ban." },
       { name: "banlist", role: "admin", description: "Show banned users." },
       { name: "unbanall", role: "admin", description: "Unban every banned user." },
+      
       
       { name: "favsall", role: "admin", description: "Top savers ranked by total saves." },
       { name: "favsrecent", role: "admin", description: "Show recent favorites across all users." },
