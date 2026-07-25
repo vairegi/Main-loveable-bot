@@ -101,7 +101,7 @@ function AdminPage() {
           </button>
         </div>
         <nav className="mx-auto flex max-w-6xl gap-1 px-4">
-          {(["activity", "users", "posts", "failures"] as Tab[]).map((t) => (
+          {(["activity", "users", "posts", "failures", "audit"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
