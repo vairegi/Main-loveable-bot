@@ -184,6 +184,12 @@ register("start", {
       const err = await deliverFileByCode(db, chatId, code);
       return err || null;
     }
+    if (payload && payload.startsWith("verify_")) {
+      const token = payload.slice("verify_".length);
+      const { handleVerifyDeepLink } = await import("./shortener");
+      const msg = await handleVerifyDeepLink(db, chatId, token);
+      return msg || null;
+    }
 
     // Bootstrap: if no admins exist, first /start becomes super-admin
     const { count, error: countError } = await db.from("admins").select("*", { count: "exact", head: true });
