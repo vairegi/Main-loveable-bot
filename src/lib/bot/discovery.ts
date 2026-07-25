@@ -128,7 +128,11 @@ export async function similarPosts(db: SupabaseClient, botUsername: string, rawT
   return rendered.text;
 }
 
-export async function leaderboard(db: SupabaseClient, limit = 10): Promise<string> {
+export async function leaderboard(
+  db: SupabaseClient,
+  limit = 10,
+  viewerId?: number,
+): Promise<string> {
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data: logs } = await db
     .from("activity_log")
@@ -141,9 +145,11 @@ export async function leaderboard(db: SupabaseClient, limit = 10): Promise<strin
     if (!id) continue;
     counts.set(id, (counts.get(id) ?? 0) + 1);
   }
-  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit);
-  if (!top.length) return "🏆 <b>Leaderboard</b>\n\nNo fetch activity in the last 30 days yet.";
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length) return "🏆 <b>Leaderboard</b>\n\nNo fetch activity in the last 30 days yet.";
+  const top = ranked.slice(0, limit);
   const ids = top.map(([id]) => id);
+  if (viewerId && !ids.includes(viewerId)) ids.push(viewerId);
   const { data: users } = await db
     .from("bot_users")
     .select("telegram_user_id, first_name")
@@ -155,5 +161,25 @@ export async function leaderboard(db: SupabaseClient, limit = 10): Promise<strin
     const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
     return `${medal} ${name} — <b>${n}</b> fetch${n === 1 ? "" : "es"}`;
   });
-  return [`<b>🏆 Leaderboard — last 30 days</b>`, "", ...lines].join("\n");
+
+  const out = [`<b>🏆 Leaderboard — last 30 days</b>`, "", ...lines];
+
+  if (viewerId) {
+    const idx = ranked.findIndex(([id]) => id === viewerId);
+    const name = esc(byId.get(viewerId)?.first_name ?? "You");
+    out.push("", "———————————");
+    if (idx === -1) {
+      out.push(`👤 <b>Your rank:</b> unranked — fetch a file to join the board!`);
+    } else {
+      const n = ranked[idx][1];
+      out.push(
+        `👤 <b>Your rank:</b> #${idx + 1} of ${ranked.length} — ${name}, <b>${n}</b> fetch${n === 1 ? "" : "es"}`,
+      );
+    }
+  } else {
+    out.push("", "———————————", "👤 Check your own ranking with /leaderboard");
+  }
+
+  return out.join("\n");
 }
+
