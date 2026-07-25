@@ -1619,7 +1619,7 @@ register("stats", {
       .slice(0, 10)
       .map(
         (p, i) =>
-          `${i + 1}. <a href="https://t.me/${statsBotUsername}?start=get_${p.code}"><code>${p.code}</code></a> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`,
+          `${i + 1}. <a href="https://t.me/${statsBotUsername}?start=get_${p.code}">${escapeHtml(String(p.code))}</a> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`,
       );
 
     const convRate =
@@ -1710,7 +1710,7 @@ register("duplicates", {
 
     const { getBotUsername } = await import("./telegram");
     const botUsername = await getBotUsername();
-    const linkCode = (c: string) => `<a href="https://t.me/${botUsername}?start=get_${c}"><code>${c}</code></a>`;
+    const linkCode = (c: string) => `<a href="https://t.me/${botUsername}?start=get_${c}">${c}</a>`;
 
     const lines: string[] = [`<b>🔁 Duplicates</b> (scanned ${scanned} posts)`];
 
