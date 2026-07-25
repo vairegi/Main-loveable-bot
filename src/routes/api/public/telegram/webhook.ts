@@ -49,6 +49,9 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
             } else if (data.startsWith("favsall:")) {
               const { handleFavsAllCallback } = await import("@/lib/bot/commands");
               await handleFavsAllCallback(db, update.callback_query);
+            } else if (data.startsWith("sim:")) {
+              const { handleSimilarCallback } = await import("@/lib/bot/commands");
+              await handleSimilarCallback(db, update.callback_query);
             } else {
               const { tg } = await import("@/lib/bot/telegram");
               await tg("answerCallbackQuery", { callback_query_id: update.callback_query.id });
