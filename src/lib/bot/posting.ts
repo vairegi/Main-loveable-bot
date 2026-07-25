@@ -533,6 +533,13 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
       await db.from("posts").update({ fetch_count: (post.fetch_count ?? 0) + 1 }).eq("id", post.id);
       const { data: cur } = await db.from("bot_users").select("fetch_count").eq("telegram_user_id", userChatId).maybeSingle();
       await db.from("bot_users").update({ fetch_count: (cur?.fetch_count ?? 0) + 1 }).eq("telegram_user_id", userChatId);
+      // Log the fetch so /trending, /leaderboard, and shortener-conversion stats
+      // have historical data (last 7/30d etc.).
+      await db.from("activity_log").insert({
+        actor_id: userChatId,
+        action: "file_fetch",
+        details: { code, post_id: post.id },
+      });
     } catch { /* ignore */ }
 
     // Bump shortener file counter (no-op when disabled).
