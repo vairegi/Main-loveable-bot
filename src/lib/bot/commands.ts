@@ -376,10 +376,13 @@ register("listchannels", {
     );
 
     return resolved
-      .map(
-        (c: any) =>
-          `• <b>${c.role}</b> — ${c.title ? `<b>${c.title}</b> ` : ""}<code>${c.telegram_chat_id}</code>`,
-      )
+      .map((c: any) => {
+        const title = c.title ? escapeHtml(String(c.title)) : `Channel ${c.telegram_chat_id}`;
+        const label = c.invite_link
+          ? `<a href="${escapeHtml(c.invite_link)}">${title}</a>`
+          : `<b>${title}</b>`;
+        return `• <b>${c.role}</b> — ${label} <code>${c.telegram_chat_id}</code>`;
+      })
       .join("\n");
   },
 });
