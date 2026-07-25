@@ -2529,23 +2529,43 @@ register("trending", {
   },
 });
 
-function similarKeyboard(tag: string, page: number, hasPrev: boolean, hasNext: boolean) {
+const SIMILAR_SESSION_MS = 20_000;
+
+function similarKeyboard(tag: string, page: number, hasPrev: boolean, hasNext: boolean, issuedAt: number) {
   // callback_data max 64 bytes. Strip '#' and truncate tag so payload always fits.
-  const bare = tag.replace(/^#/, "").slice(0, 40);
+  const bare = tag.replace(/^#/, "").slice(0, 32);
+  const ts = issuedAt.toString(36);
   const row: any[] = [];
-  if (hasPrev) row.push({ text: "◀ Prev", callback_data: `sim:${page - 1}:${bare}` });
-  if (hasNext) row.push({ text: "Next ▶", callback_data: `sim:${page + 1}:${bare}` });
+  if (hasPrev) row.push({ text: "◀ Prev", callback_data: `sim:${page - 1}:${ts}:${bare}` });
+  if (hasNext) row.push({ text: "Next ▶", callback_data: `sim:${page + 1}:${ts}:${bare}` });
   return row.length ? { inline_keyboard: [row] } : undefined;
 }
 
 export async function handleSimilarCallback(db: SupabaseClient, cbq: any) {
   const parts = String(cbq?.data ?? "").split(":");
   const page = Number(parts[1] ?? 0) || 0;
-  const bare = parts.slice(2).join(":");
+  const issuedAt = parseInt(parts[2] ?? "", 36);
+  const bare = parts.slice(3).join(":");
   const chatId = cbq.message?.chat?.id;
   const msgId = cbq.message?.message_id;
   if (!chatId || !msgId || !bare) {
     await tg("answerCallbackQuery", { callback_query_id: cbq.id });
+    return;
+  }
+  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > SIMILAR_SESSION_MS) {
+    await tg("answerCallbackQuery", {
+      callback_query_id: cbq.id,
+      text: "Session expired — run /similar again",
+      show_alert: true,
+    });
+    try {
+      // Strip the buttons so stale pagination can't be reused.
+      await tg("editMessageReplyMarkup", {
+        chat_id: chatId,
+        message_id: msgId,
+        reply_markup: { inline_keyboard: [] },
+      });
+    } catch { /* ignore */ }
     return;
   }
   const { getBotUsername } = await import("./telegram");
@@ -2556,7 +2576,7 @@ export async function handleSimilarCallback(db: SupabaseClient, cbq: any) {
     await tg("answerCallbackQuery", { callback_query_id: cbq.id, text: "No matches" });
     return;
   }
-  const kb = similarKeyboard(tag, page, rendered.hasPrev, rendered.hasNext);
+  const kb = similarKeyboard(tag, page, rendered.hasPrev, rendered.hasNext, issuedAt);
   try {
     await editMessageText(chatId, msgId, rendered.text, {
       reply_markup: kb,
@@ -2575,7 +2595,7 @@ register("similar", {
     if (!tag) return "Usage: <code>/similar #tag</code> or <code>/similar tag</code>";
     const rendered = await similarPostsPage(db, await getBotUsername(), tag, 0);
     if (!rendered) return `No posted files match <b>${escapeHtml(tag)}</b>.`;
-    const kb = similarKeyboard(tag, 0, false, rendered.hasNext);
+    const kb = similarKeyboard(tag, 0, false, rendered.hasNext, Date.now());
     await sendMessage(chatId, rendered.text, {
       reply_markup: kb,
       disable_web_page_preview: true,
