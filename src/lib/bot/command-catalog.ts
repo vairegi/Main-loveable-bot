@@ -123,6 +123,9 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "dripnow", role: "admin", syntax: "[n]", description: "Publish the next N queued posts immediately (default 1)." },
       { name: "reset", role: "admin", syntax: "[n]", description: "Put the last N posted posts back in queue (default 3, confirms)." },
       { name: "resetall", role: "admin", description: "Put every posted post back in queue (confirms)." },
+      { name: "postlater", role: "admin", syntax: "<duration> [code]", description: "Schedule a post. Duration like 5h 2m. With a code publishes that post; reply to media without a code to schedule a one-shot." },
+      { name: "postlaterlist", role: "admin", description: "List pending scheduled posts." },
+      { name: "postlatercancel", role: "admin", syntax: "<id>", description: "Cancel a scheduled post by id from /postlaterlist." },
     ],
   },
   {
