@@ -1900,6 +1900,11 @@ register("unbanall", {
 register("favs", {
   help: "/favs — list posts you've saved with ❤️",
   handler: async ({ db, user }) => {
+    const { count: totalCount } = await db
+      .from("favorites")
+      .select("post_id", { count: "exact", head: true })
+      .eq("user_id", user.id);
+
     const { data: favs } = await db
       .from("favorites")
       .select("post_id, created_at, posts(id, code, caption)")
@@ -1911,13 +1916,17 @@ register("favs", {
 
     const { getBotUsername } = await import("./telegram");
     const botUsername = await getBotUsername();
-    const lines = ["<b>❤️ Your favorites</b>", ""];
+    const total = totalCount ?? favs.length;
+    const lines = [`<b>❤️ Your favorites</b> — ${total} saved`, ""];
+    let i = 0;
     for (const f of favs as any[]) {
       const p = f.posts;
       if (!p) continue;
+      i++;
       const title = (p.caption ?? "").split("\n")[0].slice(0, 60) || `Post #${p.id}`;
-      lines.push(`• <a href="https://t.me/${botUsername}?start=get_${p.code}">${escapeHtml(title)}</a>`);
+      lines.push(`${i}. <a href="https://t.me/${botUsername}?start=get_${p.code}">${escapeHtml(title)}</a>`);
     }
+    if (total > i) lines.push("", `<i>Showing latest ${i} of ${total}.</i>`);
     return lines.join("\n");
   },
 });
