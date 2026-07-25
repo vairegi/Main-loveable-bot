@@ -25,6 +25,7 @@ import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicTelegramImportRouteImport } from './routes/api/public/telegram/import'
 import { Route as ApiPublicHooksDripRouteImport } from './routes/api/public/hooks/drip'
+import { Route as ApiPublicHooksDbExportRouteImport } from './routes/api/public/hooks/db-export'
 import { Route as ApiPublicHooksBroadcastRouteImport } from './routes/api/public/hooks/broadcast'
 import { Route as ApiPublicHooksAutodeleteRouteImport } from './routes/api/public/hooks/autodelete'
 import { Route as ApiPublicHooksAutoBackupRouteImport } from './routes/api/public/hooks/auto-backup'
@@ -112,6 +113,11 @@ const ApiPublicHooksDripRoute = ApiPublicHooksDripRouteImport.update({
   path: '/api/public/hooks/drip',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksDbExportRoute = ApiPublicHooksDbExportRouteImport.update({
+  id: '/api/public/hooks/db-export',
+  path: '/api/public/hooks/db-export',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicHooksBroadcastRoute = ApiPublicHooksBroadcastRouteImport.update({
   id: '/api/public/hooks/broadcast',
   path: '/api/public/hooks/broadcast',
@@ -146,6 +152,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
   '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
   '/api/public/hooks/broadcast': typeof ApiPublicHooksBroadcastRoute
+  '/api/public/hooks/db-export': typeof ApiPublicHooksDbExportRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
   '/api/public/telegram/import': typeof ApiPublicTelegramImportRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -166,6 +173,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
   '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
   '/api/public/hooks/broadcast': typeof ApiPublicHooksBroadcastRoute
+  '/api/public/hooks/db-export': typeof ApiPublicHooksDbExportRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
   '/api/public/telegram/import': typeof ApiPublicTelegramImportRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
   '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
   '/api/public/hooks/broadcast': typeof ApiPublicHooksBroadcastRoute
+  '/api/public/hooks/db-export': typeof ApiPublicHooksDbExportRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
   '/api/public/telegram/import': typeof ApiPublicTelegramImportRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
@@ -210,6 +219,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/auto-backup'
     | '/api/public/hooks/autodelete'
     | '/api/public/hooks/broadcast'
+    | '/api/public/hooks/db-export'
     | '/api/public/hooks/drip'
     | '/api/public/telegram/import'
     | '/api/public/telegram/webhook'
@@ -230,6 +240,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/auto-backup'
     | '/api/public/hooks/autodelete'
     | '/api/public/hooks/broadcast'
+    | '/api/public/hooks/db-export'
     | '/api/public/hooks/drip'
     | '/api/public/telegram/import'
     | '/api/public/telegram/webhook'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/auto-backup'
     | '/api/public/hooks/autodelete'
     | '/api/public/hooks/broadcast'
+    | '/api/public/hooks/db-export'
     | '/api/public/hooks/drip'
     | '/api/public/telegram/import'
     | '/api/public/telegram/webhook'
@@ -272,6 +284,7 @@ export interface RootRouteChildren {
   ApiPublicHooksAutoBackupRoute: typeof ApiPublicHooksAutoBackupRoute
   ApiPublicHooksAutodeleteRoute: typeof ApiPublicHooksAutodeleteRoute
   ApiPublicHooksBroadcastRoute: typeof ApiPublicHooksBroadcastRoute
+  ApiPublicHooksDbExportRoute: typeof ApiPublicHooksDbExportRoute
   ApiPublicHooksDripRoute: typeof ApiPublicHooksDripRoute
   ApiPublicTelegramImportRoute: typeof ApiPublicTelegramImportRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
@@ -391,6 +404,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksDripRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/db-export': {
+      id: '/api/public/hooks/db-export'
+      path: '/api/public/hooks/db-export'
+      fullPath: '/api/public/hooks/db-export'
+      preLoaderRoute: typeof ApiPublicHooksDbExportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/broadcast': {
       id: '/api/public/hooks/broadcast'
       path: '/api/public/hooks/broadcast'
@@ -443,6 +463,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksAutoBackupRoute: ApiPublicHooksAutoBackupRoute,
   ApiPublicHooksAutodeleteRoute: ApiPublicHooksAutodeleteRoute,
   ApiPublicHooksBroadcastRoute: ApiPublicHooksBroadcastRoute,
+  ApiPublicHooksDbExportRoute: ApiPublicHooksDbExportRoute,
   ApiPublicHooksDripRoute: ApiPublicHooksDripRoute,
   ApiPublicTelegramImportRoute: ApiPublicTelegramImportRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,

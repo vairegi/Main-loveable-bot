@@ -224,6 +224,8 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       { name: "warns", role: "admin", syntax: "<user_id>", description: "Show a user's warning history." },
       { name: "unwarn", role: "admin", syntax: "<user_id>", description: "Clear all warnings for a user." },
       { name: "health", role: "admin", description: "Live health snapshot: queues, cron ages, failures." },
+      { name: "dbexport", role: "admin", syntax: "[now|on|off|every <n>d]", description: "Automatic database export (default every 2 days). Shows status, runs one now, or changes the schedule." },
+
       { name: "audit", role: "admin", syntax: "[n]", description: "Show the latest admin audit entries (default 20, max 100)." },
 
       { name: "favsall", role: "admin", description: "Top savers ranked by total saves." },

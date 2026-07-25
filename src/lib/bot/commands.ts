@@ -3008,7 +3008,66 @@ register("unwarn", {
 });
 
 // ---------------- Health & Audit ----------------
+register("dbexport", {
+  help: "/dbexport [now|on|off|every <n>d] — automatic database export",
+  adminOnly: true,
+  handler: async ({ db, chatId, args }) => {
+    const { runDatabaseExport, formatExportReport } = await import("./db-export");
+    const sub = (args[0] ?? "").toLowerCase();
+
+    const { data: row } = await db.from("bot_settings").select("value").eq("key", "db_export").maybeSingle();
+    const cfg = ((row?.value as any) ?? {}) as {
+      enabled?: boolean;
+      interval_days?: number;
+      last_run?: string;
+      last_folder?: string;
+      last_rows?: number;
+      last_failed?: number;
+    };
+    const intervalDays = Number(cfg.interval_days) > 0 ? Number(cfg.interval_days) : 2;
+    const save = async (patch: Record<string, unknown>) => {
+      await db
+        .from("bot_settings")
+        .upsert({ key: "db_export", value: { ...cfg, enabled: cfg.enabled !== false, interval_days: intervalDays, ...patch } }, { onConflict: "key" });
+    };
+
+    if (sub === "on" || sub === "off") {
+      await save({ enabled: sub === "on" });
+      return `🗄️ Automatic database export is now <b>${sub === "on" ? "ON" : "OFF"}</b> (every ${intervalDays}d).`;
+    }
+
+    if (sub === "every") {
+      const n = parseInt((args[1] ?? "").replace(/[^0-9]/g, ""), 10);
+      if (!Number.isFinite(n) || n < 1 || n > 30) return "Usage: <code>/dbexport every 2d</code> (1–30 days)";
+      await save({ interval_days: n });
+      return `🗄️ Export interval set to every <b>${n} day${n === 1 ? "" : "s"}</b>.`;
+    }
+
+    if (sub === "now") {
+      await sendMessage(chatId, "🗄️ Exporting database… this can take a minute.");
+      const result = await runDatabaseExport(db);
+      await save({ last_run: new Date().toISOString(), last_folder: result.folder, last_rows: result.totalRows, last_failed: result.failed });
+      return formatExportReport(result, { days: intervalDays });
+    }
+
+    const lastRunMs = cfg.last_run ? new Date(cfg.last_run).getTime() : 0;
+    const nextRun = lastRunMs ? new Date(lastRunMs + intervalDays * 86_400_000) : null;
+    return [
+      "🗄️ <b>Automatic database export</b>",
+      `Status: ${cfg.enabled === false ? "❌ off" : "✅ on"} • every <b>${intervalDays}d</b>`,
+      `Last run: ${cfg.last_run ? `<code>${new Date(cfg.last_run).toISOString().replace("T", " ").slice(0, 16)} UTC</code>` : "—"}`,
+      cfg.last_folder ? `Last snapshot: <code>${cfg.last_folder}</code> • ${(cfg.last_rows ?? 0).toLocaleString()} rows${cfg.last_failed ? ` • ⚠️ ${cfg.last_failed} failed` : ""}` : "",
+      `Next due: ${nextRun ? `<code>${nextRun.toISOString().replace("T", " ").slice(0, 16)} UTC</code>` : "on next check"}`,
+      "",
+      "<code>/dbexport now</code> • <code>/dbexport every 2d</code> • <code>/dbexport on</code> • <code>/dbexport off</code>",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  },
+});
+
 register("health", {
+
   help: "/health — live health snapshot",
   adminOnly: true,
   handler: async ({ db }) => {
