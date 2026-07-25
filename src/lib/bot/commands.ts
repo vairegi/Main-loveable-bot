@@ -1927,6 +1927,7 @@ register("favs", {
       lines.push(`${i}. <a href="https://t.me/${botUsername}?start=get_${p.code}">${escapeHtml(title)}</a>`);
     }
     if (total > i) lines.push("", `<i>Showing latest ${i} of ${total}.</i>`);
+    lines.push("", `<i>Remove with</i> <code>/rfavs 1</code> <i>or</i> <code>/rfavs 1 3 5</code> <i>or a range</i> <code>/rfavs 1-5</code>.`);
     return lines.join("\n");
   },
 });
