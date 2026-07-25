@@ -455,6 +455,12 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
     return "";
   }
 
+  // Link-shortener verification gate (no-op when disabled).
+  {
+    const { requireVerification } = await import("./shortener");
+    if (await requireVerification(db, userChatId, code)) return "";
+  }
+
   const sourceChatId = post.source_chat_id ? chatId(post.source_chat_id) : undefined;
   const sourceMessageId = numericMessageId(post.source_message_id);
   const media = mediaWithSource((post.media ?? {}) as TgMedia, sourceMessageId);
@@ -527,6 +533,12 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
       await db.from("posts").update({ fetch_count: (post.fetch_count ?? 0) + 1 }).eq("id", post.id);
       const { data: cur } = await db.from("bot_users").select("fetch_count").eq("telegram_user_id", userChatId).maybeSingle();
       await db.from("bot_users").update({ fetch_count: (cur?.fetch_count ?? 0) + 1 }).eq("telegram_user_id", userChatId);
+    } catch { /* ignore */ }
+
+    // Bump shortener file counter (no-op when disabled).
+    try {
+      const { bumpFilesUsed } = await import("./shortener");
+      await bumpFilesUsed(db, userChatId);
     } catch { /* ignore */ }
 
     return "";

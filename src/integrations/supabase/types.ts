@@ -162,6 +162,13 @@ export type Database = {
           last_seen: string
           rate_window_count: number
           rate_window_started_at: string | null
+          sh_bypass_count: number
+          sh_files_used: number
+          sh_pending_code: string | null
+          sh_pending_issued_at: string | null
+          sh_pending_token: string | null
+          sh_pending_verified_at: string | null
+          sh_verified_until: string | null
           telegram_user_id: number
           username: string | null
         }
@@ -175,6 +182,13 @@ export type Database = {
           last_seen?: string
           rate_window_count?: number
           rate_window_started_at?: string | null
+          sh_bypass_count?: number
+          sh_files_used?: number
+          sh_pending_code?: string | null
+          sh_pending_issued_at?: string | null
+          sh_pending_token?: string | null
+          sh_pending_verified_at?: string | null
+          sh_verified_until?: string | null
           telegram_user_id: number
           username?: string | null
         }
@@ -188,6 +202,13 @@ export type Database = {
           last_seen?: string
           rate_window_count?: number
           rate_window_started_at?: string | null
+          sh_bypass_count?: number
+          sh_files_used?: number
+          sh_pending_code?: string | null
+          sh_pending_issued_at?: string | null
+          sh_pending_token?: string | null
+          sh_pending_verified_at?: string | null
+          sh_verified_until?: string | null
           telegram_user_id?: number
           username?: string | null
         }

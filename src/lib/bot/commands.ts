@@ -184,6 +184,12 @@ register("start", {
       const err = await deliverFileByCode(db, chatId, code);
       return err || null;
     }
+    if (payload && payload.startsWith("verify_")) {
+      const token = payload.slice("verify_".length);
+      const { handleVerifyDeepLink } = await import("./shortener");
+      const msg = await handleVerifyDeepLink(db, chatId, token);
+      return msg || null;
+    }
 
     // Bootstrap: if no admins exist, first /start becomes super-admin
     const { count, error: countError } = await db.from("admins").select("*", { count: "exact", head: true });
@@ -2298,6 +2304,125 @@ register("setweburl", {
     if (error) return `❌ ${error.message}`;
     await logAction(db, user, "set_web_app_url", { url: clean });
     return `✅ Web app URL set to <code>${clean}</code>`;
+  },
+});
+
+
+// ---------- Link shortener ----------
+
+register("shortener", {
+  help: "/shortener on|off|status — toggle link-shortener verification",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    const { getShortenerConfig, saveShortenerConfig } = await import("./shortener");
+    const sub = (args[0] ?? "status").toLowerCase();
+    if (sub === "on" || sub === "enable") {
+      const cfg = await getShortenerConfig(db);
+      if (!cfg.api) return "❌ Set the shortener API first: <code>/shortenerapi &lt;url&gt;</code>";
+      await saveShortenerConfig(db, { enabled: true });
+      return "✅ Shortener verification is now <b>ON</b>.";
+    }
+    if (sub === "off" || sub === "disable") {
+      await saveShortenerConfig(db, { enabled: false });
+      return "✅ Shortener verification is now <b>OFF</b>.";
+    }
+    const cfg = await getShortenerConfig(db);
+    return (
+      `<b>🔗 Shortener status</b>\n\n` +
+      `State: ${cfg.enabled ? "🟢 ON" : "🔴 OFF"}\n` +
+      `API: <code>${escapeHtml(cfg.api || "(not set)")}</code>\n` +
+      `Files per verify: <b>${cfg.limit}</b>\n` +
+      `Token lifetime: <b>${cfg.hours}h</b>\n` +
+      `Min solve time: <b>${cfg.min_solve_seconds}s</b>\n` +
+      `Tutorial URL: <code>${escapeHtml(cfg.tutorial_url || "(none)")}</code>\n\n` +
+      `<b>Message:</b>\n${cfg.message}`
+    );
+  },
+});
+
+register("shortenerapi", {
+  help: "/shortenerapi &lt;url&gt; — set shortener API endpoint. Use {url} placeholder.",
+  adminOnly: true,
+  handler: async ({ db, args, rawText }) => {
+    const url = rawText.slice("/shortenerapi".length).trim();
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return (
+        "Usage: <code>/shortenerapi https://example.com/api?api=KEY&url={url}</code>\n\n" +
+        "Use <code>{url}</code> where the destination URL should be substituted. " +
+        "If omitted, the URL is appended to the end of the template."
+      );
+    }
+    const { saveShortenerConfig } = await import("./shortener");
+    await saveShortenerConfig(db, { api: url });
+    return "✅ Shortener API updated. Test with a file request while the shortener is <b>on</b>.";
+  },
+});
+
+register("shortenerlimit", {
+  help: "/shortenerlimit &lt;n&gt; — files a user can fetch before re-verifying",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    const n = Number(args[0]);
+    if (!Number.isFinite(n) || n < 1 || n > 500) return "Usage: /shortenerlimit 15 (1–500)";
+    const { saveShortenerConfig } = await import("./shortener");
+    await saveShortenerConfig(db, { limit: Math.floor(n) });
+    return `✅ Users must re-verify every <b>${Math.floor(n)}</b> files.`;
+  },
+});
+
+register("shortenerhours", {
+  help: "/shortenerhours &lt;n&gt; — hours a verification stays valid",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    const n = Number(args[0]);
+    if (!Number.isFinite(n) || n < 1 || n > 720) return "Usage: /shortenerhours 24 (1–720)";
+    const { saveShortenerConfig } = await import("./shortener");
+    await saveShortenerConfig(db, { hours: Math.floor(n) });
+    return `✅ Verification now lasts <b>${Math.floor(n)}h</b>.`;
+  },
+});
+
+register("shortenermsg", {
+  help: "/shortenermsg &lt;html&gt; — message shown with the verify button",
+  adminOnly: true,
+  handler: async ({ db, rawHtml }) => {
+    const text = rawHtml.slice("/shortenermsg".length).trim();
+    if (!text) return "Usage: <code>/shortenermsg &lt;html&gt;</code>\nHTML formatting supported.";
+    const { saveShortenerConfig } = await import("./shortener");
+    await saveShortenerConfig(db, { message: text });
+    return "✅ Verify message updated.";
+  },
+});
+
+register("shortenertutorial", {
+  help: "/shortenertutorial &lt;url|off&gt; — tutorial button URL shown with verify",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    const arg = (args[0] ?? "").trim();
+    const { saveShortenerConfig } = await import("./shortener");
+    if (!arg || arg.toLowerCase() === "off") {
+      await saveShortenerConfig(db, { tutorial_url: "" });
+      return "✅ Tutorial button removed.";
+    }
+    if (!/^https?:\/\//i.test(arg)) return "Usage: /shortenertutorial https://... (or 'off')";
+    await saveShortenerConfig(db, { tutorial_url: arg });
+    return `✅ Tutorial button will open <code>${escapeHtml(arg)}</code>`;
+  },
+});
+
+register("shortenerbtn", {
+  help: "/shortenerbtn &lt;verify text&gt; | &lt;tutorial text&gt; — button labels",
+  adminOnly: true,
+  handler: async ({ db, rawText }) => {
+    const rest = rawText.slice("/shortenerbtn".length).trim();
+    if (!rest) return "Usage: <code>/shortenerbtn Verify link | How to solve</code>";
+    const [verifyText, tutorialText] = rest.split("|").map((s) => s.trim());
+    const patch: Record<string, string> = {};
+    if (verifyText) patch.button_text = verifyText;
+    if (tutorialText) patch.tutorial_text = tutorialText;
+    const { saveShortenerConfig } = await import("./shortener");
+    await saveShortenerConfig(db, patch);
+    return "✅ Button labels updated.";
   },
 });
 

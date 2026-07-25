@@ -158,6 +158,20 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
     ],
   },
   {
+    title: "Link shortener",
+    emoji: "🔗",
+    slug: "shortener",
+    commands: [
+      { name: "shortener", role: "admin", syntax: "on|off|status", description: "Toggle link-shortener verification (default off). Status shows the full config." },
+      { name: "shortenerapi", role: "admin", syntax: "<url>", description: "Set the shortener API endpoint. Use {url} placeholder for where the destination URL is substituted." },
+      { name: "shortenerlimit", role: "admin", syntax: "<n>", description: "Files a user can fetch before they must solve the shortener again (default 15)." },
+      { name: "shortenerhours", role: "admin", syntax: "<n>", description: "Hours a verification stays valid before expiring (default 24)." },
+      { name: "shortenermsg", role: "admin", syntax: "<html>", description: "Message shown alongside the verify button when a user hits the limit." },
+      { name: "shortenertutorial", role: "admin", syntax: "<url|off>", description: "URL for the tutorial button shown below the verify button. Use 'off' to hide." },
+      { name: "shortenerbtn", role: "admin", syntax: "<verify> | <tutorial>", description: "Customize the button labels. Example: /shortenerbtn Verify now | How to open" },
+    ],
+  },
+  {
     title: "Users & moderation",
     emoji: "📊",
     slug: "users-moderation",
