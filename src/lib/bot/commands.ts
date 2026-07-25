@@ -1568,6 +1568,14 @@ register("stats", {
       .order("fetch_count", { ascending: false })
       .limit(10);
 
+    // Unique users who fetched a file today / in the last 7 days.
+    const [{ data: fetchActorsToday }, { data: fetchActors7d }] = await Promise.all([
+      db.from("activity_log").select("actor_id").eq("action", "file_fetch").gte("created_at", startOfToday).limit(20000),
+      db.from("activity_log").select("actor_id").eq("action", "file_fetch").gte("created_at", weekAgo).limit(50000),
+    ]);
+    const uniqueFetchersToday = new Set((fetchActorsToday ?? []).map((r) => String(r.actor_id ?? ""))).size;
+    const uniqueFetchers7d = new Set((fetchActors7d ?? []).map((r) => String(r.actor_id ?? ""))).size;
+
     const { data: backupChannels } = await db.from("channels").select("telegram_chat_id, title, invite_link").eq("role", "backup");
     const backupLines: string[] = [];
     if (backupChannels?.length && postCount) {
@@ -1603,10 +1611,16 @@ register("stats", {
       }
     }
 
+    const { getBotUsername: getBotUsernameForStats } = await import("./telegram");
+    const statsBotUsername = await getBotUsernameForStats();
+
     const topLines = (topFiles ?? [])
       .filter((p) => (p.fetch_count ?? 0) > 0)
       .slice(0, 10)
-      .map((p, i) => `${i + 1}. <code>${p.code}</code> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`);
+      .map(
+        (p, i) =>
+          `${i + 1}. <a href="https://t.me/${statsBotUsername}?start=get_${p.code}"><code>${p.code}</code></a> — ${p.fetch_count}× — ${escapeHtml((p.caption ?? "").slice(0, 30)) || "(no caption)"}`,
+      );
 
     const convRate =
       shortenerIssued7d && shortenerIssued7d > 0
@@ -1625,6 +1639,7 @@ register("stats", {
       "",
       "<b>📈 Engagement</b>",
       `Fetches: <b>${fetchesToday ?? 0}</b> today · ${fetches7d ?? 0} in last 7d`,
+      `Users who fetched: <b>${uniqueFetchersToday}</b> today · ${uniqueFetchers7d} in last 7d`,
       `Shortener conversion (7d): <b>${convRate}</b>`,
       "",
       `<b>⏱️ Queues</b>`,
