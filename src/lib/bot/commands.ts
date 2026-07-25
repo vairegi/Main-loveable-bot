@@ -1404,6 +1404,34 @@ register("autodelete", {
   },
 });
 
+register("cmdautodelete", {
+  help: "/cmdautodelete &lt;duration&gt; — auto-delete command replies (like /leaderboard, /favs) and the user's command after Xs/Xm/Xh. Use /cmdautodelete off to disable. Default: 2m.",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    if (!args[0]) {
+      const cur = await getCommandAutodeleteSeconds(db);
+      return cur > 0
+        ? `⏳ Command auto-delete is <b>${formatDuration(cur)}</b>.\nUse /cmdautodelete off to disable, or /cmdautodelete 30s to change.`
+        : "⏹️ Command auto-delete is <b>off</b>.\nUse /cmdautodelete 2m (or 30s, 1h) to enable.";
+    }
+    // Allow seconds too (Xs) in addition to Xm/Xh/Xd.
+    let secs: number | null = null;
+    const s = args[0].trim().toLowerCase();
+    if (s === "off" || s === "0") secs = 0;
+    else {
+      const m = s.match(/^(\d+)s$/);
+      if (m) secs = Number(m[1]);
+      else secs = parseDuration(s);
+    }
+    if (secs === null) return "Usage: /cmdautodelete &lt;Xs|Xm|Xh|Xd&gt; or /cmdautodelete off";
+    await setCommandAutodeleteSeconds(db, secs);
+    await logAction(db, user, "set_cmd_autodelete", { seconds: secs });
+    return secs > 0
+      ? `✅ Command auto-delete set to <b>${formatDuration(secs)}</b>. Command replies and user commands will be removed after that.`
+      : "✅ Command auto-delete disabled.";
+  },
+});
+
 register("fsub", {
   help:
     "/fsub &lt;chat_id&gt; &lt;invite_link&gt; — require users to join this channel before Get File works. Use an approval-required invite link so members appear as Join Requests you can approve later.",
