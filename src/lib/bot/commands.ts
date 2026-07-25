@@ -2529,12 +2529,58 @@ register("trending", {
   },
 });
 
+function similarKeyboard(tag: string, page: number, hasPrev: boolean, hasNext: boolean) {
+  // callback_data max 64 bytes. Strip '#' and truncate tag so payload always fits.
+  const bare = tag.replace(/^#/, "").slice(0, 40);
+  const row: any[] = [];
+  if (hasPrev) row.push({ text: "◀ Prev", callback_data: `sim:${page - 1}:${bare}` });
+  if (hasNext) row.push({ text: "Next ▶", callback_data: `sim:${page + 1}:${bare}` });
+  return row.length ? { inline_keyboard: [row] } : undefined;
+}
+
+export async function handleSimilarCallback(db: SupabaseClient, cbq: any) {
+  const parts = String(cbq?.data ?? "").split(":");
+  const page = Number(parts[1] ?? 0) || 0;
+  const bare = parts.slice(2).join(":");
+  const chatId = cbq.message?.chat?.id;
+  const msgId = cbq.message?.message_id;
+  if (!chatId || !msgId || !bare) {
+    await tg("answerCallbackQuery", { callback_query_id: cbq.id });
+    return;
+  }
+  const { getBotUsername } = await import("./telegram");
+  const { similarPostsPage } = await import("./discovery");
+  const tag = `#${bare}`;
+  const rendered = await similarPostsPage(db, await getBotUsername(), tag, page);
+  if (!rendered) {
+    await tg("answerCallbackQuery", { callback_query_id: cbq.id, text: "No matches" });
+    return;
+  }
+  const kb = similarKeyboard(tag, page, rendered.hasPrev, rendered.hasNext);
+  try {
+    await editMessageText(chatId, msgId, rendered.text, {
+      reply_markup: kb,
+      disable_web_page_preview: true,
+    });
+  } catch { /* likely "message is not modified" */ }
+  await tg("answerCallbackQuery", { callback_query_id: cbq.id });
+}
+
 register("similar", {
   help: "/similar &lt;#tag&gt; — find posts matching a tag (only from published posts)",
-  handler: async ({ db, rawText }) => {
+  handler: async ({ db, rawText, chatId }) => {
     const { getBotUsername } = await import("./telegram");
-    const { similarPosts } = await import("./discovery");
-    return similarPosts(db, await getBotUsername(), rawText, 15);
+    const { normalizeSimilarTag, similarPostsPage } = await import("./discovery");
+    const tag = normalizeSimilarTag(rawText);
+    if (!tag) return "Usage: <code>/similar #tag</code> or <code>/similar tag</code>";
+    const rendered = await similarPostsPage(db, await getBotUsername(), tag, 0);
+    if (!rendered) return `No posted files match <b>${escapeHtml(tag)}</b>.`;
+    const kb = similarKeyboard(tag, 0, false, rendered.hasNext);
+    await sendMessage(chatId, rendered.text, {
+      reply_markup: kb,
+      disable_web_page_preview: true,
+    });
+    return null;
   },
 });
 
