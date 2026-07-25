@@ -42,6 +42,18 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
     ],
   },
   {
+    title: "Discovery",
+    emoji: "🔎",
+    slug: "discovery",
+    commands: [
+      { name: "random", role: "user", description: "Get a random published post." },
+      { name: "recent", role: "user", description: "10 most recently published posts." },
+      { name: "trending", role: "user", description: "Most fetched posts in the last 7 days." },
+      { name: "similar", role: "user", syntax: "<#tag>", description: "Find posts matching a tag among already-published posts." },
+      { name: "leaderboard", role: "user", description: "Top savers by fetches in the last 30 days." },
+    ],
+  },
+  {
     title: "Admin management",
     emoji: "🛡️",
     slug: "admin-management",
