@@ -203,6 +203,7 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       },
       { name: "broadcastlater", role: "admin", syntax: "<duration> <text|reply>", description: "Queue a broadcast for later (e.g. 5h). Reply to a message to schedule a forward." },
       { name: "exportusers", role: "admin", description: "Download every bot user as a CSV attachment." },
+      { name: "activity", role: "admin", syntax: "[n]", description: "Show latest N activity log entries (default 20, max 100)." },
       { name: "ban", role: "admin", syntax: "<user_id> [reason]", description: "Block a user from fetching files." },
       { name: "unban", role: "admin", syntax: "<user_id>", description: "Remove ban." },
       { name: "banlist", role: "admin", description: "Show banned users." },

@@ -2677,6 +2677,37 @@ register("exportusers", {
   },
 });
 
+// ---------------- Activity tail (admin) ----------------
+register("activity", {
+  help: "/activity [n] — show the latest N activity_log entries (default 20, max 100)",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    let n = parseInt(args[0] ?? "20", 10);
+    if (!Number.isFinite(n) || n <= 0) n = 20;
+    n = Math.min(n, 100);
+    const { data, error } = await db
+      .from("activity_log")
+      .select("created_at, actor_id, actor_username, action, details")
+      .order("created_at", { ascending: false })
+      .limit(n);
+    if (error) return `❌ ${escapeHtml(error.message)}`;
+    if (!data?.length) return "No activity yet.";
+    const lines = data.map((r: any, i: number) => {
+      const when = new Date(r.created_at).toISOString().replace("T", " ").slice(0, 19);
+      const who = r.actor_username ? `@${r.actor_username}` : String(r.actor_id ?? "—");
+      let detail = "";
+      if (r.details) {
+        const s = typeof r.details === "string" ? r.details : JSON.stringify(r.details);
+        detail = ` · ${s.slice(0, 120)}`;
+      }
+      return `${i + 1}. <code>${when}</code> · ${escapeHtml(who)} · <b>${escapeHtml(r.action)}</b>${escapeHtml(detail)}`;
+    });
+    return [`<b>📜 Activity — latest ${data.length}</b>`, "", ...lines].join("\n");
+  },
+});
+
+
+
 
 export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
   const def = commands.get(commandName.toLowerCase());
