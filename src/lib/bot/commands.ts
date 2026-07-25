@@ -1888,6 +1888,7 @@ register("ban", {
     const r = await banUser(db, target, reason);
     if (r.error) return `❌ ${r.error}`;
     await logAction(db, user, "ban_user", { target, reason });
+    { const { writeAudit } = await import("./audit"); await writeAudit(db, user, "ban_user", String(target), { reason }); }
     return `🚫 Banned <code>${target}</code>${reason ? ` — ${reason}` : ""}.`;
   },
 });
