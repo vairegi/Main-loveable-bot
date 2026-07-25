@@ -292,6 +292,7 @@ register("removeadmin", {
       .eq("is_super_admin", false);
     if (error) return `❌ ${error.message}`;
     await logAction(db, user, "remove_admin", { target });
+    { const { writeAudit } = await import("./audit"); await writeAudit(db, user, "remove_admin", String(target)); }
     return `✅ Admin removed: <code>${target}</code>`;
   },
 });
