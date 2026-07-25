@@ -122,7 +122,7 @@ function AdminPage() {
         {dashboard.isError && <p className="text-sm text-destructive">{(dashboard.error as any)?.message}</p>}
         {data && (
           <>
-            {tab === "activity" && <ActivityTable rows={data.activity} />}
+            {tab === "activity" && <ActivityTable rows={[...liveRows, ...data.activity].slice(0, 100)} />}
             {tab === "users" && <UsersTable rows={data.users} />}
             {tab === "posts" && <PostsTable rows={data.posts} />}
             {tab === "failures" && <FailuresTable rows={data.failures} />}
