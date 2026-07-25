@@ -273,6 +273,7 @@ register("addadmin", {
     });
     if (error) return `❌ ${error.message}`;
     await logAction(db, user, "add_admin", { target });
+    { const { writeAudit } = await import("./audit"); await writeAudit(db, user, "add_admin", String(target)); }
     return `✅ Admin added: <code>${target}</code>`;
   },
 });
