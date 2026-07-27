@@ -154,9 +154,13 @@ export async function handleDatabaseChannelPost(db: SupabaseClient, msg: any): P
   const media = extractMedia(msg);
 
   if (kind === "file") {
-    // Attach to the most recent post from this same channel (within a 6-hour window)
+    // Attach to the cover post this file belongs to. Prefer the most recent
+    // post within a 6-hour window; if the bot was offline (or the files
+    // arrived long after the cover) fall back to the nearest earlier message
+    // from the same channel. Files must never become standalone posts —
+    // otherwise the drip publishes raw PDF/CBZ documents into main channels.
     const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-    const { data: parent } = await db
+    const { data: recent } = await db
       .from("posts")
       .select("id, extra_files")
       .eq("source_chat_id", sourceChatId)
@@ -164,6 +168,19 @@ export async function handleDatabaseChannelPost(db: SupabaseClient, msg: any): P
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    let parent = recent;
+    if (!parent) {
+      const { data: earlier } = await db
+        .from("posts")
+        .select("id, extra_files")
+        .eq("source_chat_id", sourceChatId)
+        .lt("source_message_id", sourceMessageId)
+        .order("source_message_id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      parent = earlier;
+    }
 
     if (parent) {
       const existingFiles = Array.isArray(parent.extra_files) ? parent.extra_files : [];
@@ -173,8 +190,9 @@ export async function handleDatabaseChannelPost(db: SupabaseClient, msg: any): P
         .eq("id", parent.id);
       return;
     }
-    // No parent within window — treat as a standalone queued post so it isn't lost
+    // Truly no cover anywhere in this channel — treat as a standalone queued post
   }
+
 
   // Insert as a queued (posted_at = null) post
   const originalCaption = (msg.caption ?? msg.text ?? "") as string;
@@ -272,6 +290,40 @@ async function quarantineMissingPost(db: SupabaseClient, post: any): Promise<voi
   await db.from("posts").delete().eq("id", post.id);
 }
 
+// A queued post whose main media is a bare document/audio with no caption is a
+// stray file (PDF/CBZ) that lost its cover post. Publishing it dumps a raw file
+// into the main channels. Instead, merge it into the nearest earlier post from
+// the same channel so users still get the file via "Get File".
+// Returns true when the stray post was absorbed and removed from the queue.
+async function absorbStrayFilePost(db: SupabaseClient, post: any): Promise<boolean> {
+  const kind = (post?.media as TgMedia | null)?.kind;
+  if (kind !== "document" && kind !== "audio") return false;
+  if ((post.caption ?? "").trim()) return false;
+
+  const { data: parent } = await db
+    .from("posts")
+    .select("id, extra_files")
+    .eq("source_chat_id", post.source_chat_id)
+    .lt("source_message_id", post.source_message_id)
+    .order("source_message_id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!parent) return false;
+
+  const existing = Array.isArray(parent.extra_files) ? parent.extra_files : [];
+  const media = { ...(post.media as TgMedia), source_message_id: post.source_message_id };
+  const already = existing.some((f: any) => f?.source_message_id === post.source_message_id);
+  if (!already) {
+    await db
+      .from("posts")
+      .update({ extra_files: [...existing, media, ...(Array.isArray(post.extra_files) ? post.extra_files : [])] })
+      .eq("id", parent.id);
+  }
+  await db.from("posts").delete().eq("id", post.id);
+  return true;
+}
+
+
 export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<{ posted: number; failed: number; drained: boolean; failures: DripFailure[]; quarantined: number }> {
   const { data: queue } = await db
     .from("posts")
@@ -290,7 +342,9 @@ export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<
 
   for (const post of queue) {
     try {
+      if (await absorbStrayFilePost(db, post)) continue;
       await publishPost(db, post);
+
       await db.from("posts").update({ posted_at: new Date().toISOString() }).eq("id", post.id);
       posted++;
     } catch (e) {
