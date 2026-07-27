@@ -154,9 +154,13 @@ export async function handleDatabaseChannelPost(db: SupabaseClient, msg: any): P
   const media = extractMedia(msg);
 
   if (kind === "file") {
-    // Attach to the most recent post from this same channel (within a 6-hour window)
+    // Attach to the cover post this file belongs to. Prefer the most recent
+    // post within a 6-hour window; if the bot was offline (or the files
+    // arrived long after the cover) fall back to the nearest earlier message
+    // from the same channel. Files must never become standalone posts —
+    // otherwise the drip publishes raw PDF/CBZ documents into main channels.
     const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-    const { data: parent } = await db
+    const { data: recent } = await db
       .from("posts")
       .select("id, extra_files")
       .eq("source_chat_id", sourceChatId)
@@ -164,6 +168,19 @@ export async function handleDatabaseChannelPost(db: SupabaseClient, msg: any): P
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    let parent = recent;
+    if (!parent) {
+      const { data: earlier } = await db
+        .from("posts")
+        .select("id, extra_files")
+        .eq("source_chat_id", sourceChatId)
+        .lt("source_message_id", sourceMessageId)
+        .order("source_message_id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      parent = earlier;
+    }
 
     if (parent) {
       const existingFiles = Array.isArray(parent.extra_files) ? parent.extra_files : [];
@@ -173,8 +190,9 @@ export async function handleDatabaseChannelPost(db: SupabaseClient, msg: any): P
         .eq("id", parent.id);
       return;
     }
-    // No parent within window — treat as a standalone queued post so it isn't lost
+    // Truly no cover anywhere in this channel — treat as a standalone queued post
   }
+
 
   // Insert as a queued (posted_at = null) post
   const originalCaption = (msg.caption ?? msg.text ?? "") as string;
