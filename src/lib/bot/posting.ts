@@ -290,6 +290,40 @@ async function quarantineMissingPost(db: SupabaseClient, post: any): Promise<voi
   await db.from("posts").delete().eq("id", post.id);
 }
 
+// A queued post whose main media is a bare document/audio with no caption is a
+// stray file (PDF/CBZ) that lost its cover post. Publishing it dumps a raw file
+// into the main channels. Instead, merge it into the nearest earlier post from
+// the same channel so users still get the file via "Get File".
+// Returns true when the stray post was absorbed and removed from the queue.
+async function absorbStrayFilePost(db: SupabaseClient, post: any): Promise<boolean> {
+  const kind = (post?.media as TgMedia | null)?.kind;
+  if (kind !== "document" && kind !== "audio") return false;
+  if ((post.caption ?? "").trim()) return false;
+
+  const { data: parent } = await db
+    .from("posts")
+    .select("id, extra_files")
+    .eq("source_chat_id", post.source_chat_id)
+    .lt("source_message_id", post.source_message_id)
+    .order("source_message_id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!parent) return false;
+
+  const existing = Array.isArray(parent.extra_files) ? parent.extra_files : [];
+  const media = { ...(post.media as TgMedia), source_message_id: post.source_message_id };
+  const already = existing.some((f: any) => f?.source_message_id === post.source_message_id);
+  if (!already) {
+    await db
+      .from("posts")
+      .update({ extra_files: [...existing, media, ...(Array.isArray(post.extra_files) ? post.extra_files : [])] })
+      .eq("id", parent.id);
+  }
+  await db.from("posts").delete().eq("id", post.id);
+  return true;
+}
+
+
 export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<{ posted: number; failed: number; drained: boolean; failures: DripFailure[]; quarantined: number }> {
   const { data: queue } = await db
     .from("posts")
