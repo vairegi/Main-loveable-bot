@@ -342,7 +342,9 @@ export async function dripQueue(db: SupabaseClient, batchSize: number): Promise<
 
   for (const post of queue) {
     try {
+      if (await absorbStrayFilePost(db, post)) continue;
       await publishPost(db, post);
+
       await db.from("posts").update({ posted_at: new Date().toISOString() }).eq("id", post.id);
       posted++;
     } catch (e) {
