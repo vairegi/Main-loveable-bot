@@ -222,7 +222,14 @@ register("start", {
 
       return `👑 <b>Welcome, super-admin!</b>\n\nYou are the first user, so you now control this bot.\n\nSend /help to see admin commands.`;
     }
-    return `👋 Hi ${user.first_name ?? ""}!\n\nThis is a private management bot. Send /help if you're an admin.`;
+       await sendMessage(chatId, `👋 Hi ${escapeHtml(user.first_name ?? "there")}!\n\nSend /help to see all available commands.`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📢 Join Our Channel", url: "https://t.me/+8W-f86B0a083NzZl" }]
+        ]
+      }
+    });
+    return null;
   },
 });
 
