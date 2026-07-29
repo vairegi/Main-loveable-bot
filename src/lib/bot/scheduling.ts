@@ -97,7 +97,7 @@ export async function cancelScheduled(db: SupabaseClient, id: number): Promise<b
 }
 
 async function publishOneshotToMainChannels(db: SupabaseClient, media: TgMedia, caption: string | null): Promise<number> {
-  const { data: mains } = await db.from("channels").select("telegram_chat_id").eq("role", "main");
+  const mains = await getPostingChannels(db);
   let sent = 0;
   const cap = caption ? { caption } : {};
   for (const ch of mains ?? []) {
