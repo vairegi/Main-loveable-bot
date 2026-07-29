@@ -1111,7 +1111,7 @@ register("listbackup", {
     const { data } = await db
       .from("channels")
       .select("telegram_chat_id, title, invite_link, created_at")
-      .eq("role", "backup")
+      .or("role.eq.backup,also_backup.eq.true")
       .order("created_at");
     if (!data?.length) return "No backup channels registered. Use /addbackup &lt;chat_id&gt;.";
     const lines = ["<b>💾 Backup channels</b>"];
@@ -1140,10 +1140,10 @@ register("backup", {
     // Ensure it's registered as a backup channel
     const { data: ch } = await db
       .from("channels")
-      .select("telegram_chat_id, role")
+      .select("telegram_chat_id, role, also_backup")
       .eq("telegram_chat_id", cid)
       .maybeSingle();
-    if (!ch || ch.role !== "backup") {
+    if (!ch || (ch.role !== "backup" && !ch.also_backup)) {
       return `❌ <code>${cid}</code> is not registered as a backup channel. Run /addbackup ${cid} first.`;
     }
 
@@ -1286,10 +1286,10 @@ register("backup10", {
 
     const { data: ch } = await db
       .from("channels")
-      .select("telegram_chat_id, role")
+      .select("telegram_chat_id, role, also_backup")
       .eq("telegram_chat_id", cid)
       .maybeSingle();
-    if (!ch || ch.role !== "backup") {
+    if (!ch || (ch.role !== "backup" && !ch.also_backup)) {
       return `❌ <code>${cid}</code> is not registered as a backup channel. Run /addbackup ${cid} first.`;
     }
 
