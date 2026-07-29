@@ -669,7 +669,9 @@ register("queue", {
       scheduleBlock = `▶️ Mode: <b>interval</b>\nEvery <b>${s.interval_minutes}</b> minutes, <b>${s.batch_size}</b> post(s) per drip.\nLast drip: ${last}`;
     } else if (s.mode === "times") {
       const tzHours = (s.tz_offset_minutes ?? 0) / 60;
-      scheduleBlock = `▶️ Mode: <b>times</b>\nSlots (UTC${tzHours >= 0 ? "+" : ""}${tzHours}): <b>${s.times.join(", ")}</b>\n<b>${s.per_slot}</b> post(s) per slot.`;
+      const slotList = s.times.map((t) => `${t} × ${slotCount(s, t)}`).join(", ");
+      const daily = s.times.reduce((sum, t) => sum + slotCount(s, t), 0);
+      scheduleBlock = `▶️ Mode: <b>times</b>\nSlots (UTC${tzHours >= 0 ? "+" : ""}${tzHours}): <b>${slotList}</b>\nTotal: <b>${daily}</b> post(s)/day.\nChange a slot with /setslotcount &lt;HH:MM&gt; &lt;n&gt;`;
     } else {
       scheduleBlock = "Schedule format not recognized.";
     }
