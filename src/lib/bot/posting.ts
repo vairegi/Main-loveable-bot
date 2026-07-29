@@ -394,13 +394,25 @@ export async function getPostPosition(db: SupabaseClient, post: { id?: number | 
   return (beforeCount ?? 0) + (sameTimeCount ?? 1);
 }
 
+/**
+ * Channels that receive published posts: those registered with role "main",
+ * plus any channel flagged `also_main` (e.g. a forcesub channel that should
+ * also get posts).
+ */
+export async function getPostingChannels(db: SupabaseClient): Promise<{ telegram_chat_id: number | string }[]> {
+  const { data } = await db
+    .from("channels")
+    .select("telegram_chat_id")
+    .or("role.eq.main,also_main.eq.true");
+  return data ?? [];
+}
+
 async function publishPost(db: SupabaseClient, post: any, targetChatId?: number | string): Promise<void> {
   let mains: { telegram_chat_id: number | string }[] | null;
   if (targetChatId !== undefined) {
     mains = [{ telegram_chat_id: targetChatId }];
   } else {
-    const { data } = await db.from("channels").select("telegram_chat_id").eq("role", "main");
-    mains = data;
+    mains = await getPostingChannels(db);
   }
   if (!mains?.length) throw new Error("No main channels registered");
 
