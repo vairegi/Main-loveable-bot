@@ -585,14 +585,27 @@ export async function deliverFileByCode(db: SupabaseClient, userChatId: number, 
       const state = await getReactionState(db, post.id, userChatId);
       const botUsername = await getBotUsername();
       const kb = buildReactionKeyboard(post.id, botUsername, post.code, state);
+      // One rotating feature reminder per fetch (never all at once).
+      let tipLine = "";
+      try {
+        const { formatTip } = await import("./tips");
+        const { data: u } = await db
+          .from("bot_users")
+          .select("fetch_count")
+          .eq("telegram_user_id", userChatId)
+          .maybeSingle();
+        tipLine = formatTip(u?.fetch_count ?? 0);
+      } catch { /* ignore */ }
       await sendMessage(
         userChatId,
-        `<i>Rate this post</i>${state.score ? ` — score <b>${state.score > 0 ? "+" : ""}${state.score}</b>` : ""}`,
+        `<i>Rate this post</i>${state.score ? ` — score <b>${state.score > 0 ? "+" : ""}${state.score}</b>` : ""}` +
+          (tipLine ? `\n\n${tipLine}` : ""),
         { reply_markup: kb },
       );
     } catch (e) {
       console.error("reaction keyboard failed:", e);
     }
+
 
     // Related posts (2x2 grid) — same-hashtag recent posts.
     try {
