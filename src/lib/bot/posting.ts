@@ -824,7 +824,28 @@ export type PendingSlot = { date: string; slot: string; remaining: number };
 export type Schedule =
   | { enabled: false }
   | { enabled: true; mode: "interval"; interval_minutes: number; batch_size: number; last_drip_at?: string | null; pending?: PendingSlot }
-  | { enabled: true; mode: "times"; times: string[]; per_slot: number; tz_offset_minutes: number; slots_done_for?: string /* YYYY-MM-DD */; done_slots?: string[]; pending?: PendingSlot };
+  | {
+      enabled: true;
+      mode: "times";
+      times: string[];
+      per_slot: number;
+      // Optional per-slot overrides, e.g. { "07:00": 10, "19:00": 20 }.
+      // Falls back to `per_slot` for any slot not listed here.
+      per_slot_counts?: Record<string, number>;
+      tz_offset_minutes: number;
+      slots_done_for?: string /* YYYY-MM-DD */;
+      done_slots?: string[];
+      pending?: PendingSlot;
+    };
+
+// How many posts a given time slot should publish.
+export function slotCount(
+  sched: Extract<Schedule, { mode: "times" }>,
+  time: string,
+): number {
+  const n = sched.per_slot_counts?.[time];
+  return Number.isFinite(n) && (n as number) > 0 ? (n as number) : sched.per_slot;
+}
 
 export async function getSchedule(db: SupabaseClient): Promise<Schedule> {
   const v = await getSetting<Schedule>(db, "schedule");
