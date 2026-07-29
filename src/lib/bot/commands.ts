@@ -778,7 +778,7 @@ register("queueinfo", {
       lines.push("<b>Slots</b>:");
       for (const t of s.times) {
         const done = doneSlots.includes(t);
-        lines.push(` • ${t} × ${s.per_slot} ${done ? "✅" : "⏳"}`);
+        lines.push(` • ${t} × ${slotCount(s, t)} ${done ? "✅" : "⏳"}`);
       }
 
       // Next fire: first slot today not done and >= now; else first slot tomorrow
