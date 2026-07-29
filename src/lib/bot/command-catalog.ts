@@ -82,6 +82,13 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
         details: "Roles: database | main | log | backup | forcesub.\nTip: forward a channel post to @userinfobot to get its chat_id.",
       },
       { name: "removechannel", role: "admin", syntax: "<chat_id>", description: "Unregister a channel." },
+      {
+        name: "alsopost",
+        role: "admin",
+        syntax: "<chat_id> <on|off>",
+        description: "Also publish posts to a channel that has another role.",
+        details: "A channel can only hold one role (e.g. forcesub). Turn this on so it also receives normal posts alongside the main channel.",
+      },
       { name: "listchannels", role: "admin", description: "Show all registered channels with titles." },
       { name: "setlog", role: "admin", syntax: "<chat_id>", description: "Send admin action logs to this channel." },
     ],
