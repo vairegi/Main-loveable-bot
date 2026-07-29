@@ -859,9 +859,22 @@ register("setschedule", {
       const timesRaw = args[1] ?? "";
       const perSlot = Number(args[2]);
       const tzHours = args[3] !== undefined ? Number(args[3]) : 0;
-      const times = timesRaw.split(",").map((t) => t.trim()).filter(Boolean);
-      const valid = times.every((t) => /^\d{1,2}:\d{2}$/.test(t));
-      if (!times.length || !valid) return "❌ Invalid times. Use HH:MM,HH:MM (24h).";
+      // Each entry is "HH:MM" (uses per_slot) or "HH:MM=N" (per-slot override).
+      const entries = timesRaw.split(",").map((t) => t.trim()).filter(Boolean);
+      const times: string[] = [];
+      const counts: Record<string, number> = {};
+      for (const e of entries) {
+        const [tRaw, cRaw] = e.split("=");
+        const t = tRaw.trim();
+        if (!/^\d{1,2}:\d{2}$/.test(t)) return "❌ Invalid times. Use HH:MM or HH:MM=count (24h).";
+        times.push(t);
+        if (cRaw !== undefined) {
+          const c = Number(cRaw);
+          if (!Number.isFinite(c) || c < 1) return `❌ Invalid count for slot ${t}.`;
+          counts[t] = Math.floor(c);
+        }
+      }
+      if (!times.length) return "❌ Invalid times. Use HH:MM,HH:MM (24h).";
       if (!Number.isFinite(perSlot) || perSlot < 1) return "❌ Invalid per_slot count.";
       if (!Number.isFinite(tzHours)) return "❌ Invalid tz_offset_hours.";
       const s: Schedule = {
@@ -869,13 +882,48 @@ register("setschedule", {
         mode: "times",
         times,
         per_slot: perSlot,
+        ...(Object.keys(counts).length ? { per_slot_counts: counts } : {}),
         tz_offset_minutes: Math.round(tzHours * 60),
       };
       await saveSchedule(db, s);
       await logAction(db, user, "set_schedule", s);
-      return `✅ Schedule saved: <b>${perSlot}</b> post(s) at <b>${times.join(", ")}</b> (UTC${tzHours >= 0 ? "+" : ""}${tzHours}).`;
+      const list = times.map((t) => `${t} × ${counts[t] ?? perSlot}`).join(", ");
+      const daily = times.reduce((sum, t) => sum + (counts[t] ?? perSlot), 0);
+      return `✅ Schedule saved: <b>${list}</b> (UTC${tzHours >= 0 ? "+" : ""}${tzHours}).\nTotal: <b>${daily}</b> post(s)/day.`;
     }
-    return "Usage:\n/setschedule interval &lt;minutes&gt; &lt;batch&gt;\n/setschedule times &lt;HH:MM,HH:MM&gt; &lt;per_slot&gt; [tz_offset_hours]";
+    return "Usage:\n/setschedule interval &lt;minutes&gt; &lt;batch&gt;\n/setschedule times &lt;HH:MM[=n],HH:MM[=n]&gt; &lt;per_slot&gt; [tz_offset_hours]";
+  },
+});
+
+register("setslotcount", {
+  help: "/setslotcount &lt;HH:MM|all&gt; &lt;n&gt; — set how many posts a slot publishes",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const target = (args[0] ?? "").trim();
+    const n = Number(args[1]);
+    if (!target || !Number.isFinite(n) || n < 1) {
+      return "Usage: /setslotcount &lt;HH:MM|all&gt; &lt;n&gt;\nExample: /setslotcount 07:00 10";
+    }
+    const s = await getSchedule(db);
+    if (!s.enabled || s.mode !== "times") {
+      return "❌ Slot counts only apply to <b>times</b> mode. Use /setschedule times ... first.";
+    }
+    const count = Math.floor(n);
+    let next: Schedule;
+    if (target.toLowerCase() === "all") {
+      next = { ...s, per_slot: count, per_slot_counts: undefined };
+    } else {
+      if (!s.times.includes(target)) {
+        return `❌ No slot <b>${target}</b>. Current slots: ${s.times.join(", ")}`;
+      }
+      next = { ...s, per_slot_counts: { ...(s.per_slot_counts ?? {}), [target]: count } };
+    }
+    await saveSchedule(db, next);
+    await logAction(db, user, "set_slot_count", { target, count });
+    const t2 = next as Extract<Schedule, { mode: "times" }>;
+    const list = t2.times.map((t) => `${t} × ${slotCount(t2, t)}`).join(", ");
+    const daily = t2.times.reduce((sum, t) => sum + slotCount(t2, t), 0);
+    return `✅ Updated.\nSlots: <b>${list}</b>\nTotal: <b>${daily}</b> post(s)/day.`;
   },
 });
 
