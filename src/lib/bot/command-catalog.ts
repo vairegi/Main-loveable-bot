@@ -123,7 +123,14 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
         role: "admin",
         description: "Configure the drip schedule.",
         details:
-          "/setschedule interval <minutes> <batch>\n/setschedule times <HH:MM,HH:MM,...> <per_slot> [tz_offset_hours]",
+          "/setschedule interval <minutes> <batch>\n/setschedule times <HH:MM[=n],HH:MM[=n],...> <per_slot> [tz_offset_hours]\nExample: /setschedule times 07:00=10,19:00=20 15 5.5",
+      },
+      {
+        name: "setslotcount",
+        role: "admin",
+        syntax: "<HH:MM|all> <n>",
+        description: "Set how many posts a single time slot publishes (or all slots).",
+        details: "/setslotcount 07:00 10\n/setslotcount all 15",
       },
       { name: "dripnow", role: "admin", syntax: "[n]", description: "Publish the next N queued posts immediately (default 1)." },
       { name: "reset", role: "admin", syntax: "[n]", description: "Put the last N posted posts back in queue (default 3, confirms)." },
