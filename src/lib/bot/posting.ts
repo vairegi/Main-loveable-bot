@@ -407,6 +407,15 @@ export async function getPostingChannels(db: SupabaseClient): Promise<{ telegram
   return data ?? [];
 }
 
+/** Publish one stored post into a single specific channel (used by /backfill). */
+export async function publishPostToChannel(
+  db: SupabaseClient,
+  post: any,
+  targetChatId: number | string,
+): Promise<void> {
+  await publishPost(db, post, targetChatId);
+}
+
 async function publishPost(db: SupabaseClient, post: any, targetChatId?: number | string): Promise<void> {
   let mains: { telegram_chat_id: number | string }[] | null;
   if (targetChatId !== undefined) {
