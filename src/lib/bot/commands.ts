@@ -18,6 +18,7 @@ import {
   dripQueue,
   resetPostedPosts,
   resetAllPostedPosts,
+  slotCount,
   type Schedule,
 } from "./posting";
 import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeBackupChannel, wipeBackupChannelMessages, markAllBackedUp } from "./backups";
