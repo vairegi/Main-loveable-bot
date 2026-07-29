@@ -450,7 +450,8 @@ register("listchannels", {
         const label = c.invite_link
           ? `<a href="${escapeHtml(c.invite_link)}">${title}</a>`
           : `<b>${title}</b>`;
-        return `• <b>${c.role}</b> — ${label} <code>${c.telegram_chat_id}</code>`;
+        const alsoPost = c.also_main && c.role !== "main" ? " <i>(also posts)</i>" : "";
+        return `• <b>${c.role}</b>${alsoPost} — ${label} <code>${c.telegram_chat_id}</code>`;
       })
       .join("\n");
   },
