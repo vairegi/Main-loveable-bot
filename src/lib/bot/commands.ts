@@ -402,6 +402,116 @@ register("alsopost", {
   },
 });
 
+register("setrole", {
+  help: "/setrole &lt;chat_id&gt; &lt;main|forcesub|backup&gt; &lt;on|off&gt; — give a registered channel an extra role (keeps its primary role)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const chatId = Number(args[0]);
+    const role = args[1]?.toLowerCase();
+    const mode = args[2]?.toLowerCase();
+    const map: Record<string, string> = { main: "also_main", forcesub: "also_fsub", fsub: "also_fsub", backup: "also_backup" };
+    const col = map[role ?? ""];
+    if (!chatId || !col || !["on", "off"].includes(mode ?? "")) {
+      return "Usage: /setrole &lt;chat_id&gt; &lt;main|forcesub|backup&gt; &lt;on|off&gt;\nExample: /setrole -1004399640463 main on";
+    }
+    const on = mode === "on";
+    const { data, error } = await db
+      .from("channels")
+      .update({ [col]: on } as any)
+      .eq("telegram_chat_id", chatId)
+      .select("telegram_chat_id, title, role");
+    if (error) return `❌ ${error.message}`;
+    if (!data?.length) return `❌ Channel <code>${chatId}</code> is not registered. Use /addchannel first.`;
+    await logAction(db, user, "set_extra_role", { chatId, role, on });
+    const ch = data[0] as any;
+    return `✅ <b>${ch.title ?? chatId}</b> (primary role: ${ch.role}) — extra role <b>${role}</b> is now <b>${on ? "ON" : "OFF"}</b>.`;
+  },
+});
+
+register("backfill", {
+  help: "/backfill #&lt;from&gt; [#&lt;to&gt;] [chat_id] — republish stored posts from position #from into a channel that missed them",
+  adminOnly: true,
+  handler: async ({ db, chatId, user, args }) => {
+    const { startBackfill, getBackfillJob, runBackfillChunk, backfillStatusText, totalPostCount } =
+      await import("./backfill");
+    const { getPostingChannels } = await import("./posting");
+
+    const existing = await getBackfillJob(db);
+    if (existing) {
+      return `⚠️ A backfill is already running.\n\n${backfillStatusText(existing)}\n\nUse /cancelbackfill to stop it.`;
+    }
+
+    const positions: number[] = [];
+    const targets: number[] = [];
+    for (const raw of args) {
+      const t = raw.trim();
+      if (!t) continue;
+      if (t.startsWith("#")) {
+        const n = Number(t.slice(1));
+        if (Number.isFinite(n)) positions.push(n);
+      } else {
+        const n = Number(t);
+        if (!Number.isFinite(n)) continue;
+        if (n < 0 || Math.abs(n) >= 1_000_000_000) targets.push(n);
+        else positions.push(n);
+      }
+    }
+
+    if (!positions.length) {
+      return "Usage: /backfill #431 [#500] [chat_id]\nExample: /backfill #431 — republish post #431 to the newest post into every posting channel that is missing them.";
+    }
+
+    const total = await totalPostCount(db);
+    const fromPos = Math.max(1, positions[0]);
+    const toPos = Math.min(positions[1] ?? total, total);
+    if (fromPos > toPos) return `❌ Invalid range: #${fromPos} → #${toPos} (database has ${total} posts).`;
+
+    let chatIds = targets;
+    if (!chatIds.length) {
+      const chans = await getPostingChannels(db);
+      chatIds = chans.map((c) => Number(c.telegram_chat_id)).filter((n) => Number.isFinite(n));
+    }
+    if (!chatIds.length) return "❌ No posting channels registered.";
+
+    await startBackfill(db, { chatIds, fromPos, toPos, requesterChatId: chatId, createdBy: user.id });
+    await logAction(db, user, "backfill_start", { chatIds, fromPos, toPos });
+
+    // Run the first chunk immediately so the admin sees instant progress; the
+    // cron worker (and its self-chain) finishes the rest.
+    const res = await runBackfillChunk(db, 3);
+    const head =
+      `♻️ <b>Backfill queued</b> — #${fromPos} → #${toPos} into ${chatIds.map((c) => `<code>${c}</code>`).join(", ")}\n` +
+      `Already-present posts are skipped. Progress continues automatically.`;
+    if (!res) return head;
+    return `${head}\n\n${res.done ? "✅ Done." : backfillStatusText(res.job)}`;
+  },
+});
+
+register("backfillstatus", {
+  help: "/backfillstatus — show progress of the running backfill",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { getBackfillJob, backfillStatusText } = await import("./backfill");
+    const job = await getBackfillJob(db);
+    if (!job) return "No backfill is running.";
+    return backfillStatusText(job);
+  },
+});
+
+register("cancelbackfill", {
+  help: "/cancelbackfill — stop the running backfill",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    const { getBackfillJob, clearBackfillJob } = await import("./backfill");
+    const job = await getBackfillJob(db);
+    if (!job) return "No backfill is running.";
+    await clearBackfillJob(db);
+    await logAction(db, user, "backfill_cancel", { fromPos: job.fromPos, nextPos: job.nextPos });
+    return `🛑 Backfill cancelled at #${job.nextPos}. Posted ${job.posted}, skipped ${job.skipped}, failed ${job.failed}.`;
+  },
+});
+
+
 register("removechannel", {
   help: "/removechannel &lt;chat_id&gt; — unregister a channel",
   adminOnly: true,
