@@ -377,6 +377,31 @@ register("addchannel", {
   },
 });
 
+register("alsopost", {
+  help: "/alsopost &lt;chat_id&gt; &lt;on|off&gt; — also publish posts to a channel that has another role (e.g. forcesub)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const chatId = Number(args[0]);
+    const mode = args[1]?.toLowerCase();
+    if (!chatId || !["on", "off"].includes(mode ?? "")) {
+      return "Usage: /alsopost &lt;chat_id&gt; &lt;on|off&gt;";
+    }
+    const on = mode === "on";
+    const { data, error } = await db
+      .from("channels")
+      .update({ also_main: on })
+      .eq("telegram_chat_id", chatId)
+      .select("telegram_chat_id, title, role");
+    if (error) return `❌ ${error.message}`;
+    if (!data?.length) return `❌ Channel <code>${chatId}</code> is not registered. Use /addchannel first.`;
+    await logAction(db, user, "also_post", { chatId, on });
+    const ch = data[0] as any;
+    return on
+      ? `✅ <b>${ch.title ?? chatId}</b> (role: ${ch.role}) will now also receive posts.`
+      : `✅ <b>${ch.title ?? chatId}</b> will no longer receive posts (role: ${ch.role} unchanged).`;
+  },
+});
+
 register("removechannel", {
   help: "/removechannel &lt;chat_id&gt; — unregister a channel",
   adminOnly: true,
@@ -425,7 +450,8 @@ register("listchannels", {
         const label = c.invite_link
           ? `<a href="${escapeHtml(c.invite_link)}">${title}</a>`
           : `<b>${title}</b>`;
-        return `• <b>${c.role}</b> — ${label} <code>${c.telegram_chat_id}</code>`;
+        const alsoPost = c.also_main && c.role !== "main" ? " <i>(also posts)</i>" : "";
+        return `• <b>${c.role}</b>${alsoPost} — ${label} <code>${c.telegram_chat_id}</code>`;
       })
       .join("\n");
   },

@@ -1,7 +1,7 @@
 // Scheduled posts + scheduled broadcasts.
 // Duration strings like "5h 2m", "10m", "2d 3h" -> milliseconds.
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { extractMedia, postByLink, repostByCode, type TgMedia } from "./posting";
+import { extractMedia, getPostingChannels, postByLink, repostByCode, type TgMedia } from "./posting";
 import { sendPhoto, sendVideo, sendDocument, sendAudio, sendMessage } from "./telegram";
 
 const UNIT_MS: Record<string, number> = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -97,7 +97,7 @@ export async function cancelScheduled(db: SupabaseClient, id: number): Promise<b
 }
 
 async function publishOneshotToMainChannels(db: SupabaseClient, media: TgMedia, caption: string | null): Promise<number> {
-  const { data: mains } = await db.from("channels").select("telegram_chat_id").eq("role", "main");
+  const mains = await getPostingChannels(db);
   let sent = 0;
   const cap = caption ? { caption } : {};
   for (const ch of mains ?? []) {
