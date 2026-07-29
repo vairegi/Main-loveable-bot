@@ -450,7 +450,12 @@ register("listchannels", {
         const label = c.invite_link
           ? `<a href="${escapeHtml(c.invite_link)}">${title}</a>`
           : `<b>${title}</b>`;
-        const alsoPost = c.also_main && c.role !== "main" ? " <i>(also posts)</i>" : "";
+        const extras = [
+          c.also_main && c.role !== "main" ? "also posts" : null,
+          c.also_fsub && c.role !== "forcesub" ? "also forcesub" : null,
+          c.also_backup && c.role !== "backup" ? "also backup" : null,
+        ].filter(Boolean);
+        const alsoPost = extras.length ? ` <i>(${extras.join(", ")})</i>` : "";
         return `• <b>${c.role}</b>${alsoPost} — ${label} <code>${c.telegram_chat_id}</code>`;
       })
       .join("\n");
@@ -1483,7 +1488,7 @@ register("backupstatus", {
       db.from("bot_settings").select("value").eq("key", "auto_backup_paused").maybeSingle(),
       db.from("bot_settings").select("value").eq("key", "manual_backup_jobs").maybeSingle(),
       db.from("posts").select("id", { count: "exact", head: true }),
-      db.from("channels").select("telegram_chat_id, title, invite_link").eq("role", "backup").order("created_at"),
+      db.from("channels").select("telegram_chat_id, title, invite_link").or("role.eq.backup,also_backup.eq.true").order("created_at"),
     ]);
     const paused = Boolean((pausedRow?.value as { paused?: boolean } | null)?.paused);
     const jobs = ((jobsRow?.value as any) ?? {}) as Record<string, any>;
@@ -1696,7 +1701,7 @@ register("stats", {
     const uniqueFetchersToday = new Set((fetchActorsToday ?? []).map((r) => String(r.actor_id ?? ""))).size;
     const uniqueFetchers7d = new Set((fetchActors7d ?? []).map((r) => String(r.actor_id ?? ""))).size;
 
-    const { data: backupChannels } = await db.from("channels").select("telegram_chat_id, title, invite_link").eq("role", "backup");
+    const { data: backupChannels } = await db.from("channels").select("telegram_chat_id, title, invite_link").or("role.eq.backup,also_backup.eq.true");
     const backupLines: string[] = [];
     if (backupChannels?.length && postCount) {
       for (const ch of backupChannels) {
