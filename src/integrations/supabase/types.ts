@@ -310,6 +310,7 @@ export type Database = {
       channels: {
         Row: {
           added_by: number | null
+          also_main: boolean
           created_at: string
           invite_link: string | null
           role: string
@@ -318,6 +319,7 @@ export type Database = {
         }
         Insert: {
           added_by?: number | null
+          also_main?: boolean
           created_at?: string
           invite_link?: string | null
           role: string
@@ -326,6 +328,7 @@ export type Database = {
         }
         Update: {
           added_by?: number | null
+          also_main?: boolean
           created_at?: string
           invite_link?: string | null
           role?: string
