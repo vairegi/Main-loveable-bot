@@ -916,11 +916,12 @@ export async function computeDripDecision(db: SupabaseClient, chunkSize: number)
       if (!Number.isFinite(h) || !Number.isFinite(m)) continue;
       const slotMin = h * 60 + m;
       if (nowMinutes >= slotMin && !doneSlots.includes(t)) {
+        const count = slotCount(sched, t);
         await saveSchedule(db, {
           ...sched,
-          pending: { date: dateKey, slot: t, remaining: sched.per_slot },
+          pending: { date: dateKey, slot: t, remaining: count },
         });
-        return { batchSize: Math.min(sched.per_slot, chunkSize), slotKey: `${dateKey}|${t}` };
+        return { batchSize: Math.min(count, chunkSize), slotKey: `${dateKey}|${t}` };
       }
     }
     return { batchSize: 0 };
