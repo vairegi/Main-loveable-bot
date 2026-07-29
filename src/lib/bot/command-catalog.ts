@@ -89,8 +89,25 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
         description: "Also publish posts to a channel that has another role.",
         details: "A channel can only hold one role (e.g. forcesub). Turn this on so it also receives normal posts alongside the main channel.",
       },
+      {
+        name: "setrole",
+        role: "admin",
+        syntax: "<chat_id> <main|forcesub|backup> <on|off>",
+        description: "Give a registered channel an extra role.",
+        details: "Each channel row has one primary role. Use this to stack extra roles on the same channel — e.g. /setrole -100123 main on makes a forcesub channel also receive posts, /setrole -100123 backup on also mirrors into it.",
+      },
+      {
+        name: "backfill",
+        role: "admin",
+        syntax: "#<from> [#<to>] [chat_id]",
+        description: "Republish stored posts from position #from into channels that missed them.",
+        details: "Skips posts already present in the target channel. Runs in the background a few posts at a time. Omit chat_id to target every posting channel. Example: /backfill #431",
+      },
+      { name: "backfillstatus", role: "admin", description: "Show progress of the running backfill." },
+      { name: "cancelbackfill", role: "admin", description: "Stop the running backfill." },
       { name: "listchannels", role: "admin", description: "Show all registered channels with titles." },
       { name: "setlog", role: "admin", syntax: "<chat_id>", description: "Send admin action logs to this channel." },
+
     ],
   },
   {

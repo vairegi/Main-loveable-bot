@@ -28,6 +28,7 @@ import { Route as ApiPublicHooksLeaderboardBroadcastRouteImport } from './routes
 import { Route as ApiPublicHooksDripRouteImport } from './routes/api/public/hooks/drip'
 import { Route as ApiPublicHooksDbExportRouteImport } from './routes/api/public/hooks/db-export'
 import { Route as ApiPublicHooksBroadcastRouteImport } from './routes/api/public/hooks/broadcast'
+import { Route as ApiPublicHooksBackfillRouteImport } from './routes/api/public/hooks/backfill'
 import { Route as ApiPublicHooksAutodeleteRouteImport } from './routes/api/public/hooks/autodelete'
 import { Route as ApiPublicHooksAutoBackupRouteImport } from './routes/api/public/hooks/auto-backup'
 
@@ -130,6 +131,11 @@ const ApiPublicHooksBroadcastRoute = ApiPublicHooksBroadcastRouteImport.update({
   path: '/api/public/hooks/broadcast',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksBackfillRoute = ApiPublicHooksBackfillRouteImport.update({
+  id: '/api/public/hooks/backfill',
+  path: '/api/public/hooks/backfill',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicHooksAutodeleteRoute =
   ApiPublicHooksAutodeleteRouteImport.update({
     id: '/api/public/hooks/autodelete',
@@ -158,6 +164,7 @@ export interface FileRoutesByFullPath {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
   '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
+  '/api/public/hooks/backfill': typeof ApiPublicHooksBackfillRoute
   '/api/public/hooks/broadcast': typeof ApiPublicHooksBroadcastRoute
   '/api/public/hooks/db-export': typeof ApiPublicHooksDbExportRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
@@ -180,6 +187,7 @@ export interface FileRoutesByTo {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
   '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
+  '/api/public/hooks/backfill': typeof ApiPublicHooksBackfillRoute
   '/api/public/hooks/broadcast': typeof ApiPublicHooksBroadcastRoute
   '/api/public/hooks/db-export': typeof ApiPublicHooksDbExportRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
@@ -204,6 +212,7 @@ export interface FileRoutesById {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/hooks/auto-backup': typeof ApiPublicHooksAutoBackupRoute
   '/api/public/hooks/autodelete': typeof ApiPublicHooksAutodeleteRoute
+  '/api/public/hooks/backfill': typeof ApiPublicHooksBackfillRoute
   '/api/public/hooks/broadcast': typeof ApiPublicHooksBroadcastRoute
   '/api/public/hooks/db-export': typeof ApiPublicHooksDbExportRoute
   '/api/public/hooks/drip': typeof ApiPublicHooksDripRoute
@@ -228,6 +237,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/hooks/auto-backup'
     | '/api/public/hooks/autodelete'
+    | '/api/public/hooks/backfill'
     | '/api/public/hooks/broadcast'
     | '/api/public/hooks/db-export'
     | '/api/public/hooks/drip'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/hooks/auto-backup'
     | '/api/public/hooks/autodelete'
+    | '/api/public/hooks/backfill'
     | '/api/public/hooks/broadcast'
     | '/api/public/hooks/db-export'
     | '/api/public/hooks/drip'
@@ -273,6 +284,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/hooks/auto-backup'
     | '/api/public/hooks/autodelete'
+    | '/api/public/hooks/backfill'
     | '/api/public/hooks/broadcast'
     | '/api/public/hooks/db-export'
     | '/api/public/hooks/drip'
@@ -296,6 +308,7 @@ export interface RootRouteChildren {
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicHooksAutoBackupRoute: typeof ApiPublicHooksAutoBackupRoute
   ApiPublicHooksAutodeleteRoute: typeof ApiPublicHooksAutodeleteRoute
+  ApiPublicHooksBackfillRoute: typeof ApiPublicHooksBackfillRoute
   ApiPublicHooksBroadcastRoute: typeof ApiPublicHooksBroadcastRoute
   ApiPublicHooksDbExportRoute: typeof ApiPublicHooksDbExportRoute
   ApiPublicHooksDripRoute: typeof ApiPublicHooksDripRoute
@@ -439,6 +452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksBroadcastRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/backfill': {
+      id: '/api/public/hooks/backfill'
+      path: '/api/public/hooks/backfill'
+      fullPath: '/api/public/hooks/backfill'
+      preLoaderRoute: typeof ApiPublicHooksBackfillRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/autodelete': {
       id: '/api/public/hooks/autodelete'
       path: '/api/public/hooks/autodelete'
@@ -483,6 +503,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicHooksAutoBackupRoute: ApiPublicHooksAutoBackupRoute,
   ApiPublicHooksAutodeleteRoute: ApiPublicHooksAutodeleteRoute,
+  ApiPublicHooksBackfillRoute: ApiPublicHooksBackfillRoute,
   ApiPublicHooksBroadcastRoute: ApiPublicHooksBroadcastRoute,
   ApiPublicHooksDbExportRoute: ApiPublicHooksDbExportRoute,
   ApiPublicHooksDripRoute: ApiPublicHooksDripRoute,

@@ -114,7 +114,7 @@ export const Route = createFileRoute("/api/public/hooks/auto-backup")({
         const { data: channels } = await db
           .from("channels")
           .select("telegram_chat_id, title")
-          .eq("role", "backup");
+          .or("role.eq.backup,also_backup.eq.true");
 
         const channelsToProcess = (channels ?? []).filter((c) => {
           const cid = Number(c.telegram_chat_id);

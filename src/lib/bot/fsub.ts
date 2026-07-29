@@ -14,7 +14,7 @@ export async function listForceSubChannels(db: SupabaseClient): Promise<FsubChan
   const { data } = await db
     .from("channels")
     .select("telegram_chat_id, title, invite_link")
-    .eq("role", "forcesub");
+    .or("role.eq.forcesub,also_fsub.eq.true");
   return (data ?? []).map((c) => ({
     chat_id: Number(c.telegram_chat_id),
     title: c.title,

@@ -46,7 +46,10 @@ function chatId(value: number | string): number | string {
 }
 
 async function listBackupChannels(db: SupabaseClient): Promise<number[]> {
-  const { data } = await db.from("channels").select("telegram_chat_id").eq("role", "backup");
+  const { data } = await db
+    .from("channels")
+    .select("telegram_chat_id")
+    .or("role.eq.backup,also_backup.eq.true");
   return (data ?? []).map((c) => Number(c.telegram_chat_id)).filter((n) => Number.isFinite(n));
 }
 

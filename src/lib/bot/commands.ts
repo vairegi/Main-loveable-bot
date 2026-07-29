@@ -402,6 +402,116 @@ register("alsopost", {
   },
 });
 
+register("setrole", {
+  help: "/setrole &lt;chat_id&gt; &lt;main|forcesub|backup&gt; &lt;on|off&gt; — give a registered channel an extra role (keeps its primary role)",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const chatId = Number(args[0]);
+    const role = args[1]?.toLowerCase();
+    const mode = args[2]?.toLowerCase();
+    const map: Record<string, string> = { main: "also_main", forcesub: "also_fsub", fsub: "also_fsub", backup: "also_backup" };
+    const col = map[role ?? ""];
+    if (!chatId || !col || !["on", "off"].includes(mode ?? "")) {
+      return "Usage: /setrole &lt;chat_id&gt; &lt;main|forcesub|backup&gt; &lt;on|off&gt;\nExample: /setrole -1004399640463 main on";
+    }
+    const on = mode === "on";
+    const { data, error } = await db
+      .from("channels")
+      .update({ [col]: on } as any)
+      .eq("telegram_chat_id", chatId)
+      .select("telegram_chat_id, title, role");
+    if (error) return `❌ ${error.message}`;
+    if (!data?.length) return `❌ Channel <code>${chatId}</code> is not registered. Use /addchannel first.`;
+    await logAction(db, user, "set_extra_role", { chatId, role, on });
+    const ch = data[0] as any;
+    return `✅ <b>${ch.title ?? chatId}</b> (primary role: ${ch.role}) — extra role <b>${role}</b> is now <b>${on ? "ON" : "OFF"}</b>.`;
+  },
+});
+
+register("backfill", {
+  help: "/backfill #&lt;from&gt; [#&lt;to&gt;] [chat_id] — republish stored posts from position #from into a channel that missed them",
+  adminOnly: true,
+  handler: async ({ db, chatId, user, args }) => {
+    const { startBackfill, getBackfillJob, runBackfillChunk, backfillStatusText, totalPostCount } =
+      await import("./backfill");
+    const { getPostingChannels } = await import("./posting");
+
+    const existing = await getBackfillJob(db);
+    if (existing) {
+      return `⚠️ A backfill is already running.\n\n${backfillStatusText(existing)}\n\nUse /cancelbackfill to stop it.`;
+    }
+
+    const positions: number[] = [];
+    const targets: number[] = [];
+    for (const raw of args) {
+      const t = raw.trim();
+      if (!t) continue;
+      if (t.startsWith("#")) {
+        const n = Number(t.slice(1));
+        if (Number.isFinite(n)) positions.push(n);
+      } else {
+        const n = Number(t);
+        if (!Number.isFinite(n)) continue;
+        if (n < 0 || Math.abs(n) >= 1_000_000_000) targets.push(n);
+        else positions.push(n);
+      }
+    }
+
+    if (!positions.length) {
+      return "Usage: /backfill #431 [#500] [chat_id]\nExample: /backfill #431 — republish post #431 to the newest post into every posting channel that is missing them.";
+    }
+
+    const total = await totalPostCount(db);
+    const fromPos = Math.max(1, positions[0]);
+    const toPos = Math.min(positions[1] ?? total, total);
+    if (fromPos > toPos) return `❌ Invalid range: #${fromPos} → #${toPos} (database has ${total} posts).`;
+
+    let chatIds = targets;
+    if (!chatIds.length) {
+      const chans = await getPostingChannels(db);
+      chatIds = chans.map((c) => Number(c.telegram_chat_id)).filter((n) => Number.isFinite(n));
+    }
+    if (!chatIds.length) return "❌ No posting channels registered.";
+
+    await startBackfill(db, { chatIds, fromPos, toPos, requesterChatId: chatId, createdBy: user.id });
+    await logAction(db, user, "backfill_start", { chatIds, fromPos, toPos });
+
+    // Run the first chunk immediately so the admin sees instant progress; the
+    // cron worker (and its self-chain) finishes the rest.
+    const res = await runBackfillChunk(db, 3);
+    const head =
+      `♻️ <b>Backfill queued</b> — #${fromPos} → #${toPos} into ${chatIds.map((c) => `<code>${c}</code>`).join(", ")}\n` +
+      `Already-present posts are skipped. Progress continues automatically.`;
+    if (!res) return head;
+    return `${head}\n\n${res.done ? "✅ Done." : backfillStatusText(res.job)}`;
+  },
+});
+
+register("backfillstatus", {
+  help: "/backfillstatus — show progress of the running backfill",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const { getBackfillJob, backfillStatusText } = await import("./backfill");
+    const job = await getBackfillJob(db);
+    if (!job) return "No backfill is running.";
+    return backfillStatusText(job);
+  },
+});
+
+register("cancelbackfill", {
+  help: "/cancelbackfill — stop the running backfill",
+  adminOnly: true,
+  handler: async ({ db, user }) => {
+    const { getBackfillJob, clearBackfillJob } = await import("./backfill");
+    const job = await getBackfillJob(db);
+    if (!job) return "No backfill is running.";
+    await clearBackfillJob(db);
+    await logAction(db, user, "backfill_cancel", { fromPos: job.fromPos, nextPos: job.nextPos });
+    return `🛑 Backfill cancelled at #${job.nextPos}. Posted ${job.posted}, skipped ${job.skipped}, failed ${job.failed}.`;
+  },
+});
+
+
 register("removechannel", {
   help: "/removechannel &lt;chat_id&gt; — unregister a channel",
   adminOnly: true,
@@ -450,7 +560,12 @@ register("listchannels", {
         const label = c.invite_link
           ? `<a href="${escapeHtml(c.invite_link)}">${title}</a>`
           : `<b>${title}</b>`;
-        const alsoPost = c.also_main && c.role !== "main" ? " <i>(also posts)</i>" : "";
+        const extras = [
+          c.also_main && c.role !== "main" ? "also posts" : null,
+          c.also_fsub && c.role !== "forcesub" ? "also forcesub" : null,
+          c.also_backup && c.role !== "backup" ? "also backup" : null,
+        ].filter(Boolean);
+        const alsoPost = extras.length ? ` <i>(${extras.join(", ")})</i>` : "";
         return `• <b>${c.role}</b>${alsoPost} — ${label} <code>${c.telegram_chat_id}</code>`;
       })
       .join("\n");
@@ -1106,7 +1221,7 @@ register("listbackup", {
     const { data } = await db
       .from("channels")
       .select("telegram_chat_id, title, invite_link, created_at")
-      .eq("role", "backup")
+      .or("role.eq.backup,also_backup.eq.true")
       .order("created_at");
     if (!data?.length) return "No backup channels registered. Use /addbackup &lt;chat_id&gt;.";
     const lines = ["<b>💾 Backup channels</b>"];
@@ -1135,10 +1250,10 @@ register("backup", {
     // Ensure it's registered as a backup channel
     const { data: ch } = await db
       .from("channels")
-      .select("telegram_chat_id, role")
+      .select("telegram_chat_id, role, also_backup")
       .eq("telegram_chat_id", cid)
       .maybeSingle();
-    if (!ch || ch.role !== "backup") {
+    if (!ch || (ch.role !== "backup" && !ch.also_backup)) {
       return `❌ <code>${cid}</code> is not registered as a backup channel. Run /addbackup ${cid} first.`;
     }
 
@@ -1281,10 +1396,10 @@ register("backup10", {
 
     const { data: ch } = await db
       .from("channels")
-      .select("telegram_chat_id, role")
+      .select("telegram_chat_id, role, also_backup")
       .eq("telegram_chat_id", cid)
       .maybeSingle();
-    if (!ch || ch.role !== "backup") {
+    if (!ch || (ch.role !== "backup" && !ch.also_backup)) {
       return `❌ <code>${cid}</code> is not registered as a backup channel. Run /addbackup ${cid} first.`;
     }
 
@@ -1483,7 +1598,7 @@ register("backupstatus", {
       db.from("bot_settings").select("value").eq("key", "auto_backup_paused").maybeSingle(),
       db.from("bot_settings").select("value").eq("key", "manual_backup_jobs").maybeSingle(),
       db.from("posts").select("id", { count: "exact", head: true }),
-      db.from("channels").select("telegram_chat_id, title, invite_link").eq("role", "backup").order("created_at"),
+      db.from("channels").select("telegram_chat_id, title, invite_link").or("role.eq.backup,also_backup.eq.true").order("created_at"),
     ]);
     const paused = Boolean((pausedRow?.value as { paused?: boolean } | null)?.paused);
     const jobs = ((jobsRow?.value as any) ?? {}) as Record<string, any>;
@@ -1696,7 +1811,7 @@ register("stats", {
     const uniqueFetchersToday = new Set((fetchActorsToday ?? []).map((r) => String(r.actor_id ?? ""))).size;
     const uniqueFetchers7d = new Set((fetchActors7d ?? []).map((r) => String(r.actor_id ?? ""))).size;
 
-    const { data: backupChannels } = await db.from("channels").select("telegram_chat_id, title, invite_link").eq("role", "backup");
+    const { data: backupChannels } = await db.from("channels").select("telegram_chat_id, title, invite_link").or("role.eq.backup,also_backup.eq.true");
     const backupLines: string[] = [];
     if (backupChannels?.length && postCount) {
       for (const ch of backupChannels) {
