@@ -25,6 +25,7 @@ import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeB
 import { getAutodeleteSeconds, setAutodeleteSeconds, getCommandAutodeleteSeconds, setCommandAutodeleteSeconds, parseDuration, formatDuration } from "./autodelete";
 import { listForceSubChannels, addForceSubChannel, removeForceSubChannel } from "./fsub";
 import { promptConfirm, registerConfirmExecutor } from "./confirm";
+import { addUrl, loadUrls, removeUrl, setUrlRange, generateRandom, parseRange, type UrlTemplate } from "./urls";
 
 
 export interface TgUser {
