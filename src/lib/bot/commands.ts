@@ -25,6 +25,7 @@ import { backupAllToChannel, scanDatabaseToBackups, resetBackupTracking, removeB
 import { getAutodeleteSeconds, setAutodeleteSeconds, getCommandAutodeleteSeconds, setCommandAutodeleteSeconds, parseDuration, formatDuration } from "./autodelete";
 import { listForceSubChannels, addForceSubChannel, removeForceSubChannel } from "./fsub";
 import { promptConfirm, registerConfirmExecutor } from "./confirm";
+import { addUrl, loadUrls, removeUrl, setUrlRange, generateRandom, parseRange, type UrlTemplate } from "./urls";
 
 
 export interface TgUser {
@@ -3406,11 +3407,127 @@ register("setmenu", {
   },
 });
 
-export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
+// ---------------- URL template lists ----------------
 
-  const def = commands.get(commandName.toLowerCase());
+register("addurl", {
+  help: "/addurl &lt;url&gt; — add a URL template whose numeric id can be randomized",
+  adminOnly: true,
+  handler: async ({ db, user, rawText }) => {
+    const url = rawText.replace(/^\/addurl(@\S+)?\s*/i, "").trim().split(/\s+/)[0] ?? "";
+    if (!url) return "Usage: /addurl &lt;url&gt;\nExample: /addurl https://www.pinterest.com/pin/626262626262/";
+    const res = await addUrl(db, url, user.id);
+    if (!res.ok) return `❌ ${escapeHtml(res.msg)}`;
+    await logAction(db, user, "add_url_template", { url });
+    const digits = res.item.url.slice(res.item.slotStart, res.item.slotEnd);
+    return [
+      `✅ <b>URL #${res.index} added</b>`,
+      `<code>${escapeHtml(res.item.url)}</code>`,
+      `Random slot: <code>${digits}</code>`,
+      `Range: <b>${res.item.min}</b> – <b>${res.item.max}</b>`,
+      "",
+      `Get links with <code>/randomurl${res.index} 5</code>, change the range with <code>/limiturl ${res.index} ${res.item.min} - ${res.item.max}</code>.`,
+    ].join("\n");
+  },
+});
+
+register("listurl", {
+  help: "/listurl — show stored URL templates with their numbers and ranges",
+  adminOnly: true,
+  handler: async ({ db }) => {
+    const items = await loadUrls(db);
+    if (!items.length) return "No URL templates yet. Add one with /addurl &lt;url&gt;.";
+    const lines = items.map((it, i) => {
+      const digits = it.url.slice(it.slotStart, it.slotEnd);
+      let host = it.url;
+      try {
+        host = new URL(it.url).hostname.replace(/^www\./, "");
+      } catch { /* keep raw */ }
+      return [
+        `<b>${i + 1}.</b> ${escapeHtml(host)} — slot <code>${digits}</code> · range <b>${it.min}</b>–<b>${it.max}</b>`,
+        `   <code>${escapeHtml(it.url)}</code>`,
+      ].join("\n");
+    });
+    return [`<b>🔗 URL templates (${items.length})</b>`, "", ...lines, "", "Use <code>/randomurl1 5</code> · <code>/limiturl 1 600000 - 690000</code> · <code>/delurl 1</code>"].join("\n");
+  },
+});
+
+register("delurl", {
+  help: "/delurl &lt;n&gt; — remove a URL template by its number from /listurl",
+  adminOnly: true,
+  handler: async ({ db, user, args }) => {
+    const n = Number(args[0]);
+    if (!Number.isInteger(n)) return "Usage: /delurl &lt;n&gt; (number from /listurl)";
+    const res = await removeUrl(db, n);
+    if (!res.ok) return `❌ ${escapeHtml(res.msg)}`;
+    await logAction(db, user, "remove_url_template", { url: res.msg });
+    return `🗑️ Removed URL #${n} — <code>${escapeHtml(res.msg)}</code>`;
+  },
+});
+
+register("limiturl", {
+  help: "/limiturl [n] &lt;min&gt; - &lt;max&gt; — set the random digit range (omit n to apply to all)",
+  adminOnly: true,
+  handler: async ({ db, user, rawText }) => {
+    const body = rawText.replace(/^\/limiturl(@\S+)?\s*/i, "").trim();
+    if (!body) return "Usage: /limiturl [n] &lt;min&gt; - &lt;max&gt;\nExamples:\n/limiturl 600000 - 690000\n/limiturl 2 600000 - 690000";
+
+    // A leading standalone number that is NOT part of the range is the list index.
+    const idxMatch = body.match(/^(\d+)\s+(?=\d[\d,_]*\s*(?:-|–|to)\s*\d)/i);
+    const target: number | "all" = idxMatch ? Number(idxMatch[1]) : "all";
+    const rangeText = idxMatch ? body.slice(idxMatch[0].length) : body;
+
+    const range = parseRange(rangeText);
+    if (!range) return "❌ Couldn't read the range. Format: <code>/limiturl 600000 - 690000</code>";
+
+    const res = await setUrlRange(db, target, range.min, range.max);
+    if (!res.ok) return `❌ ${escapeHtml(res.msg)}`;
+    await logAction(db, user, "set_url_range", { target, ...range });
+    const scope = target === "all" ? "all URLs" : `URL #${target}`;
+    return `✅ Range for <b>${scope}</b> set to <b>${range.min}</b> – <b>${range.max}</b>. Generated links will only vary inside it.`;
+  },
+});
+
+register("randomurl", {
+  help: "/randomurl&lt;n&gt; [count] — generate random links from URL template #n",
+  adminOnly: true,
+  handler: async ({ db, args }) => {
+    const items = await loadUrls(db);
+    if (!items.length) return "No URL templates yet. Add one with /addurl &lt;url&gt;.";
+    const idx = Number(args[0]);
+    if (!Number.isInteger(idx)) {
+      return `Usage: /randomurl&lt;n&gt; [count]\nExample: <code>/randomurl1 5</code>\nYou have ${items.length} URL${items.length === 1 ? "" : "s"} — see /listurl.`;
+    }
+    return renderRandomUrls(items, idx, Number(args[1]));
+  },
+});
+
+function renderRandomUrls(items: UrlTemplate[], idx: number, rawCount: number): string {
+  if (idx < 1 || idx > items.length) return `❌ No URL #${idx}. You have ${items.length}. See /listurl.`;
+  const item = items[idx - 1]!;
+  const count = Math.min(Math.max(Number.isFinite(rawCount) ? Math.floor(rawCount) : 1, 1), 50);
+  const links = generateRandom(item, count);
+  if (!links.length) return "❌ Range too narrow to generate links. Widen it with /limiturl.";
+  const lines = links.map((l, i) => `${i + 1}. ${escapeHtml(l)}`);
+  const note = links.length < count ? `\n<i>Only ${links.length} unique link(s) fit in the range ${item.min}–${item.max}.</i>` : "";
+  return [`<b>🎲 ${links.length} random link${links.length === 1 ? "" : "s"} — URL #${idx}</b>`, "", ...lines, note].join("\n");
+}
+
+export async function dispatchCommand(ctx: CmdCtx, commandName: string): Promise<string | null> {
+  const name = commandName.toLowerCase();
+
+  // /randomurl1, /randomurl2 … — the number is part of the command name.
+  const rm = name.match(/^randomurl(\d+)$/);
+  if (rm) {
+    if (!ctx.isAdmin) return "🚫 This command is admin-only.";
+    const items = await loadUrls(ctx.db);
+    if (!items.length) return "No URL templates yet. Add one with /addurl &lt;url&gt;.";
+    return renderRandomUrls(items, Number(rm[1]), Number(ctx.args[0]));
+  }
+
+  const def = commands.get(name);
   if (!def) return null;
   if (def.superOnly && !ctx.isSuperAdmin) return "🚫 This command is for the super-admin only.";
   if (def.adminOnly && !ctx.isAdmin) return "🚫 This command is admin-only.";
   return def.handler(ctx);
 }
+

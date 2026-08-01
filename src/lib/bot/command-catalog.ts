@@ -230,6 +230,36 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
     ],
   },
   {
+    title: "URL lists",
+    emoji: "🔗",
+    slug: "url-lists",
+    commands: [
+      {
+        name: "addurl",
+        role: "admin",
+        syntax: "<url>",
+        description: "Store a URL template whose numeric id can be randomized.",
+        details: "The longest run of digits in the link becomes the random slot; everything else stays identical. Example: /addurl https://www.pinterest.com/pin/626262626262/",
+      },
+      { name: "listurl", role: "admin", description: "Show stored URL templates with their numbers, random slot, and range." },
+      {
+        name: "randomurl",
+        role: "admin",
+        syntax: "<n> [count]",
+        description: "Generate random links from URL template #n (also works as /randomurl1 5).",
+        details: "Count defaults to 1, max 50. Links are unique within the configured range.",
+      },
+      {
+        name: "limiturl",
+        role: "admin",
+        syntax: "[n] <min> - <max>",
+        description: "Set the digit range used when randomizing. Omit n to apply to every URL.",
+        details: "/limiturl 600000 - 690000\n/limiturl 2 600000 - 690000",
+      },
+      { name: "delurl", role: "admin", syntax: "<n>", description: "Remove a URL template by its number from /listurl." },
+    ],
+  },
+  {
     title: "Users & moderation",
     emoji: "📊",
     slug: "users-moderation",
