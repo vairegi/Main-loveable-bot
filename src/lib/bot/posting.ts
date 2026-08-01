@@ -78,7 +78,7 @@ export async function getPostingOptions(db: SupabaseClient): Promise<{ protect: 
 
 async function getCaptionTemplate(db: SupabaseClient): Promise<string> {
   const v = await getSetting<{ text: string }>(db, "caption_template");
-  return v?.text ?? "{caption}\n\n🎬 Tap below to get the file.";
+  return v?.text ?? "{caption}\n\n[ @Doujinshi_adults ]";
 }
 
 async function getExtraCaption(db: SupabaseClient, key: "post_caption_extra" | "file_caption_extra"): Promise<string> {
