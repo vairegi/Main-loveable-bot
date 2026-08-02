@@ -976,14 +976,24 @@ register("scheduleoff", {
   },
 });
 
+const IST_OFFSET_MINUTES = 330;
+
+function tzLabel(offsetMinutes: number): string {
+  if (offsetMinutes === IST_OFFSET_MINUTES) return "IST";
+  const h = offsetMinutes / 60;
+  return `UTC${h >= 0 ? "+" : ""}${h}`;
+}
+
 register("setschedule", {
   help:
     "/setschedule interval &lt;minutes&gt; &lt;batch&gt;\n" +
-    "/setschedule times &lt;HH:MM,HH:MM,...&gt; &lt;per_slot&gt; [tz_offset_hours]\n" +
+    "/setschedule times &lt;HH:MM,HH:MM,...&gt; &lt;per_slot&gt; [tz]\n" +
+    "  Times are <b>IST</b> by default.\n" +
     "  Examples:\n" +
     "    /setschedule interval 90 1   (1 post every 90 minutes)\n" +
-    "    /setschedule times 09:00,21:00 5 5   (5 posts at 09:00 &amp; 21:00, UTC+5)\n" +
-    "    /setschedule times 20:00 15 0        (15 posts at 20:00 UTC)",
+    "    /setschedule times 07:00,19:00 15   (15 posts at 7 AM &amp; 7 PM IST)\n" +
+    "    /setschedule times 20:00 15 utc     (15 posts at 20:00 UTC)\n" +
+    "    /setschedule times 20:00 15 tz=+2   (20:00 in UTC+2)",
   adminOnly: true,
   handler: async ({ db, user, args }) => {
     const mode = args[0]?.toLowerCase();
@@ -1000,7 +1010,19 @@ register("setschedule", {
     if (mode === "times") {
       const timesRaw = args[1] ?? "";
       const perSlot = Number(args[2]);
-      const tzHours = args[3] !== undefined ? Number(args[3]) : 0;
+      // Timezone: IST unless explicitly overridden with `utc`, `ist`, or `tz=<hours>`.
+      let tzMinutes = IST_OFFSET_MINUTES;
+      const tzArg = (args[3] ?? "").toLowerCase().trim();
+      if (tzArg) {
+        if (tzArg === "utc") tzMinutes = 0;
+        else if (tzArg === "ist") tzMinutes = IST_OFFSET_MINUTES;
+        else if (tzArg.startsWith("tz=")) {
+          const h = Number(tzArg.slice(3));
+          if (!Number.isFinite(h) || h < -14 || h > 14) return "❌ Invalid tz. Use tz=5.5, utc, or ist.";
+          tzMinutes = Math.round(h * 60);
+        }
+        // Any other trailing value is ignored — times stay in IST.
+      }
       // Each entry is "HH:MM" (uses per_slot) or "HH:MM=N" (per-slot override).
       const entries = timesRaw.split(",").map((t) => t.trim()).filter(Boolean);
       const times: string[] = [];
@@ -1018,24 +1040,24 @@ register("setschedule", {
       }
       if (!times.length) return "❌ Invalid times. Use HH:MM,HH:MM (24h).";
       if (!Number.isFinite(perSlot) || perSlot < 1) return "❌ Invalid per_slot count.";
-      if (!Number.isFinite(tzHours)) return "❌ Invalid tz_offset_hours.";
       const s: Schedule = {
         enabled: true,
         mode: "times",
         times,
         per_slot: perSlot,
         ...(Object.keys(counts).length ? { per_slot_counts: counts } : {}),
-        tz_offset_minutes: Math.round(tzHours * 60),
+        tz_offset_minutes: tzMinutes,
       };
       await saveSchedule(db, s);
       await logAction(db, user, "set_schedule", s);
       const list = times.map((t) => `${t} × ${counts[t] ?? perSlot}`).join(", ");
       const daily = times.reduce((sum, t) => sum + (counts[t] ?? perSlot), 0);
-      return `✅ Schedule saved: <b>${list}</b> (UTC${tzHours >= 0 ? "+" : ""}${tzHours}).\nTotal: <b>${daily}</b> post(s)/day.`;
+      return `✅ Schedule saved: <b>${list}</b> (${tzLabel(tzMinutes)}).\nTotal: <b>${daily}</b> post(s)/day.`;
     }
-    return "Usage:\n/setschedule interval &lt;minutes&gt; &lt;batch&gt;\n/setschedule times &lt;HH:MM[=n],HH:MM[=n]&gt; &lt;per_slot&gt; [tz_offset_hours]";
+    return "Usage:\n/setschedule interval &lt;minutes&gt; &lt;batch&gt;\n/setschedule times &lt;HH:MM[=n],HH:MM[=n]&gt; &lt;per_slot&gt; [utc|tz=&lt;hours&gt;]  (default IST)";
   },
 });
+
 
 register("setslotcount", {
   help: "/setslotcount &lt;HH:MM|all&gt; &lt;n&gt; — set how many posts a slot publishes",
