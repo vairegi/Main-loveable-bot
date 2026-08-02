@@ -145,9 +145,9 @@ export const COMMAND_CATEGORIES: CommandCategory[] = [
       {
         name: "setschedule",
         role: "admin",
-        description: "Configure the drip schedule.",
+        description: "Configure the drip schedule (times are IST by default).",
         details:
-          "/setschedule interval <minutes> <batch>\n/setschedule times <HH:MM[=n],HH:MM[=n],...> <per_slot> [tz_offset_hours]\nExample: /setschedule times 07:00=10,19:00=20 15 5.5",
+          "/setschedule interval <minutes> <batch>\n/setschedule times <HH:MM[=n],HH:MM[=n],...> <per_slot> [utc|tz=<hours>]\nExample: /setschedule times 07:00=10,19:00=20 15  (IST)",
       },
       {
         name: "setslotcount",
