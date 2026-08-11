@@ -15,6 +15,33 @@ function appendExtra(base: string, extra: string): string {
   return `${base}\n\n${extra}`;
 }
 
+function stripHtmlTags(s: string): string {
+  return s.replace(/<[^>]+>/g, "");
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Format the first non-empty line of a backup caption as a bold book title
+// with a leading 📖 emoji and a single space. Strips any pre-existing HTML
+// or box-drawing characters so the old boxed style is removed.
+function formatBackupTitle(caption: string): string {
+  const lines = caption.split("\n");
+  const firstIdx = lines.findIndex((l) => l.trim());
+  if (firstIdx === -1) return caption;
+
+  const raw = lines[firstIdx];
+  const title = stripHtmlTags(raw)
+    .replace(/[╭╮╯╰│═─]/g, "")
+    .trim();
+
+  if (!title) return caption;
+
+  lines[firstIdx] = `📖 <b>${escapeHtml(title)}</b>`;
+  return lines.join("\n");
+}
+
 // Copy a message, falling back to forward when Telegram says it can't be copied
 // (service messages, protected content, etc.).
 async function copyOrForward(
