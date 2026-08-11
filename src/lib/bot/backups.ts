@@ -103,7 +103,7 @@ async function mirrorOne(
   const fileExtra = await getSettingText(db, "file_caption_extra");
   const { getPostPosition } = await import("./posting");
   const position = await getPostPosition(db, post);
-  const caption = `#${position}\n\n${appendExtra(baseCaption, postExtra)}`.trim();
+  const caption = `#${position}\n\n${appendExtra(formatBackupTitle(baseCaption), postExtra)}`.trim();
 
   try {
     let main: any;
