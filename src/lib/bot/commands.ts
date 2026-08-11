@@ -1496,17 +1496,63 @@ register("resetbackup", {
 });
 
 register("undoresetbackup", {
-  help: "/undoresetbackup <chat_id> — mark every post as already mirrored to a backup channel (undo an accidental /resetbackup without re-forwarding)",
+  help: "/undoresetbackup [backup] <chat_id> [post link] — mark posts as already mirrored to a backup channel. With a database post link, backup resumes from that post to the newest post",
   adminOnly: true,
   handler: async ({ db, user, args }) => {
-    const cid = Number(args[0]);
-    if (!cid) return "Usage: /undoresetbackup &lt;chat_id&gt;";
-    const r = await markAllBackedUp(db, cid);
+    const rest = args.filter((a) => a.toLowerCase() !== "backup");
+    const cid = Number(rest.find((a) => /^-?\d+$/.test(a)));
+    const link = rest.find((a) => /t\.me\//i.test(a));
+    if (!cid) return "Usage: /undoresetbackup [backup] &lt;chat_id&gt; [post link]";
+
+    let startFromPostId: number | undefined;
+    let startCode: string | undefined;
+    if (link) {
+      const { parseTelegramPostLink } = await import("./posting");
+      const parsed = parseTelegramPostLink(link);
+      if (!parsed) return `❌ Not a valid Telegram post link: <code>${link}</code>`;
+      const { data: direct } = await db
+        .from("posts")
+        .select("id, code")
+        .eq("source_chat_id", parsed.sourceChatId)
+        .eq("source_message_id", parsed.messageId)
+        .maybeSingle();
+      let post: any = direct;
+      if (!post) {
+        const { data: candidates } = await db
+          .from("posts")
+          .select("id, code")
+          .eq("source_chat_id", parsed.sourceChatId)
+          .contains("extra_files", [{ source_message_id: parsed.messageId }]);
+        post = candidates?.[0] ?? null;
+      }
+      if (!post) return `❌ No stored post found for that link (msg ${parsed.messageId}). Run /scandatabase first if it's new.`;
+      startFromPostId = Number(post.id);
+      startCode = post.code;
+    }
+
+    const r = await markAllBackedUp(db, cid, { startFromPostId });
     if (r.error) return `❌ ${r.error}`;
-    await logAction(db, user, "undo_reset_backup", { chatId: cid, inserted: r.inserted, totalPosts: r.totalPosts });
-    return `✅ Marked <b>${r.inserted}</b> / ${r.totalPosts} post(s) as already mirrored to <code>${cid}</code>.\n\nThe bot will now skip re-backing up these posts. New posts going forward will still be mirrored normally.\n\n<i>Note: tracking rows have no message id, so /dltbackup can't auto-delete these from the channel — but that's fine since the messages are already there.</i>`;
+    await logAction(db, user, "undo_reset_backup", {
+      chatId: cid,
+      inserted: r.inserted,
+      totalPosts: r.totalPosts,
+      resumeFrom: r.resumeFrom ?? null,
+    });
+
+    if (startFromPostId) {
+      return [
+        `✅ Marked <b>${r.inserted}</b> post(s) before <code>${startCode}</code> as already mirrored to <code>${cid}</code>.`,
+        `🔄 Resume point: post id <code>${startFromPostId}</code> — <b>${r.pendingPosts}</b> post(s) queued from there to the newest post.`,
+        r.clearedAhead ? `🧹 Cleared <b>${r.clearedAhead}</b> stale tracking row(s) from the resume point onwards.` : "",
+        "",
+        `Run <code>/backup ${cid}</code> to start mirroring from that post.`,
+      ].filter(Boolean).join("\n");
+    }
+
+    return `✅ Marked <b>${r.inserted}</b> / ${r.totalPosts} post(s) as already mirrored to <code>${cid}</code>.\n\nThe bot will now skip re-backing up these posts. New posts going forward will still be mirrored normally.\n\n<i>Tip: add a database post link to resume from a specific post: /undoresetbackup backup ${cid} https://t.me/c/…/123</i>`;
   },
 });
+
 
 register("dltbackup", {
   help: "/dltbackup <chat_id> — delete every message the bot mirrored to a backup channel and clear its mirror log (asks to confirm; re-run until remaining = 0)",
