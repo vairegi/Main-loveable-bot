@@ -342,28 +342,38 @@ export async function resetBackupTracking(
   return { cleared: count ?? 0 };
 }
 
-// Mark every existing post as already mirrored to a backup channel WITHOUT
-// actually forwarding anything. Use this to undo an accidental /resetbackup
-// when the messages still exist in the backup channel but the tracking rows
-// were cleared. Inserts rows with null backup_message_id (the mirror scanner
-// treats any row for (post_id, backup_chat_id) as "done"). Also clears the
-// failure log so nothing gets retried.
+// Mark existing posts as already mirrored to a backup channel WITHOUT actually
+// forwarding anything. Use this to undo an accidental /resetbackup when the
+// messages still exist in the backup channel but the tracking rows were cleared.
+// Inserts rows with null backup_message_id (the mirror scanner treats any row
+// for (post_id, backup_chat_id) as "done"). Also clears the failure log so
+// nothing gets retried.
+//
+// When `startFromPostId` is given, only posts BEFORE that post are marked as
+// done, and any tracking/failure rows from that post onwards are cleared — so a
+// following /backup resumes exactly at that post and continues to the newest
+// post in the database.
 export async function markAllBackedUp(
   db: SupabaseClient,
   backupChatId: number,
-): Promise<{ inserted: number; totalPosts: number; error?: string }> {
+  opts: { startFromPostId?: number } = {},
+): Promise<{ inserted: number; totalPosts: number; resumeFrom?: number; pendingPosts?: number; clearedAhead?: number; error?: string }> {
+  const startFrom = opts.startFromPostId;
+
   // Fetch all post ids in chunks (keyset pagination).
   const CHUNK = 1000;
   let lastId = 0;
   let totalPosts = 0;
   let inserted = 0;
   for (;;) {
-    const { data: chunk, error } = await db
+    let q = db
       .from("posts")
       .select("id")
       .gt("id", lastId)
       .order("id", { ascending: true })
       .limit(CHUNK);
+    if (typeof startFrom === "number") q = q.lt("id", startFrom);
+    const { data: chunk, error } = await q;
     if (error) return { inserted, totalPosts, error: error.message };
     if (!chunk || chunk.length === 0) break;
     totalPosts += chunk.length;
@@ -382,10 +392,38 @@ export async function markAllBackedUp(
 
     if (chunk.length < CHUNK) break;
   }
+
+  if (typeof startFrom === "number") {
+    // Clear tracking + failures from the resume point onwards so /backup picks
+    // those posts up again.
+    const { count: clearedAhead } = await db
+      .from("backup_copies")
+      .delete({ count: "exact" })
+      .eq("backup_chat_id", backupChatId)
+      .gte("post_id", startFrom);
+    await db
+      .from("backup_failures")
+      .delete()
+      .eq("backup_chat_id", backupChatId)
+      .gte("post_id", startFrom);
+    const { count: pendingPosts } = await db
+      .from("posts")
+      .select("id", { count: "exact", head: true })
+      .gte("id", startFrom);
+    return {
+      inserted,
+      totalPosts,
+      resumeFrom: startFrom,
+      pendingPosts: pendingPosts ?? 0,
+      clearedAhead: clearedAhead ?? 0,
+    };
+  }
+
   // Clear failure log for this channel too.
   await db.from("backup_failures").delete().eq("backup_chat_id", backupChatId);
   return { inserted, totalPosts };
 }
+
 
 // Remove a backup channel registration (and its mirror-tracking rows).
 export async function removeBackupChannel(
